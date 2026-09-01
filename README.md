@@ -38,8 +38,6 @@ pnpm test:e2e
 pnpm build
 ```
 
-Os testes de navegação utilizam o Microsoft Edge instalado no ambiente. O relatório é gerado em `playwright-report/`. As capturas podem ser geradas com `node scripts/capture.mjs`, com o servidor em execução.
-
 ## Dados
 
 As alterações ficam no armazenamento deste navegador. A opção **Restaurar demonstração** recupera os exemplos iniciais e remove os registros criados localmente. Os resultados apresentados são demonstrativos; nenhum dado é enviado a serviços externos.
