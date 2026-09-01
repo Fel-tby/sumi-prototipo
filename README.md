@@ -30,8 +30,6 @@ pnpm install --frozen-lockfile
 pnpm dev
 ```
 
-A aplicação abre em [127.0.0.1:4317](http://127.0.0.1:4317). O servidor aceita conexões somente da própria máquina.
-
 ## Verificação
 
 ```sh
@@ -41,12 +39,6 @@ pnpm build
 ```
 
 Os testes de navegação utilizam o Microsoft Edge instalado no ambiente. O relatório é gerado em `playwright-report/`. As capturas podem ser geradas com `node scripts/capture.mjs`, com o servidor em execução.
-
-## Deploy na Vercel
-
-Importe o repositório `Fel-tby/sumi-prototipo` na Vercel, mantendo a raiz do projeto em `./`. O arquivo `vercel.json` configura Vite, o comando `pnpm build` e a saída `dist`. Use Node.js 22.12 ou superior. Não são necessárias variáveis de ambiente.
-
-A navegação usa rotas com `#`, sem necessidade de regras de redirecionamento. Os dados continuam locais a cada navegador; o deploy não adiciona backend nem compartilhamento de dados.
 
 ## Dados
 
