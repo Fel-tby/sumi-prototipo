@@ -3,6 +3,7 @@ const action = (id, title, tasks, owner = 'SEPLAN', deadline = '2026-12-15') => 
 const historical = (text) => [{ id: 'initial', at: '2026-08-27T14:30:00-03:00', text, actor: 'Dados demonstrativos' }];
 const measurement = (value) => [{ id: 'initial', value, year: 2026, note: 'Medição ilustrativa para demonstração do fluxo.', at: '2026-08-27T14:30:00-03:00', evidence: '' }];
 const targets = (value) => Object.fromEntries([2026, 2027, 2028, 2029, 2030].map((y) => [y, value]));
+const risk = (id, actionId, stage, title, probability, impact, response, owner, details = {}) => ({ id, actionId, stage, title, probability, impact, response, owner, strategicRisk: details.strategicRisk || 'Não elaborar tempestivamente a iniciativa do plano.', cause: details.cause || 'Baixa colaboração ou ausência de critérios padronizados.', consequence: details.consequence || 'Atraso na execução e comprometimento da meta institucional.', category: details.category || 'Operacional', controls: details.controls || 'Acompanhamento periódico pela SEPLAN e validação com os setores envolvidos.', controlType: details.controlType || 'Preventivo', maturity: details.maturity || 'Fraco', treatment: details.treatment || 'Acompanhar a etapa, formalizar responsáveis e revisar o cronograma.', treatmentOwner: details.treatmentOwner || owner, deadline: details.deadline || '2026-12-31', execution: details.execution ?? 0, situation: details.situation || 'Não iniciada', review: details.review || 'Trimestral', status: details.status || 'Ativo' });
 
 export const templates = [
   { id: 'pdi', type: 'PDI', name: 'Desenvolvimento institucional', version: 1, description: 'Objetivos, iniciativas e metas anuais para acompanhar a estratégia institucional.', labels: { axis: 'Eixo', objective: 'Objetivo', item: 'Iniciativa' }, fields: [] },
@@ -14,7 +15,7 @@ const pdiItems = [
     id: 'riscos', code: '8.1.3', axis: '8 · Governança e Gestão Institucional', objective: '8.1 · Aperfeiçoar Práticas de Governança Pública',
     title: 'Elaborar o Plano de Gestão de Riscos da UFCG', owner: 'SEPLAN', partners: 'Setores da UFCG',
     description: 'Estruturar a gestão de riscos da instituição, com participação dos setores e capacitação dos gestores.',
-    source: 'PDI 2026–2030 · Eixo 8 · Iniciativa 8.1.3. Recorte demonstrativo das ações e tarefas.',
+    source: 'PDI 2026–2030 · Eixo 8 · Iniciativa 8.1.3. Recorte demonstrativo das ações e etapas.',
     metric: { name: 'Etapas concluídas da elaboração', unit: '%', baseline: 0, reference: 'Linha de base do PDI', direction: 'up', targets: { 2026: 80, 2027: 100, 2028: null, 2029: null, 2030: null }, formula: 'Etapas concluídas ÷ total de etapas × 100' },
     measurements: measurement(20), extras: {},
     actions: [
@@ -23,7 +24,22 @@ const pdiItems = [
       action('capacitacao', 'Capacitar gestores e lideranças', [task('publico', 'Definir o público e o conteúdo'), task('realizar', 'Realizar a capacitação')]),
       action('politica', 'Divulgar a política de gestão de riscos', [task('comunicacao', 'Preparar a comunicação para os setores')]),
     ],
-    history: historical('Exemplo de acompanhamento iniciado com duas tarefas concluídas e medição independente de 20%.'),
+    history: historical('Exemplo de acompanhamento iniciado com duas etapass concluídas e medição independente de 20%.'), risks: [
+      risk('risk-comissao', 'comissao', 'Definir os setores participantes', 'Definição inadequada dos setores que comporão a comissão', 2, 4, 'Mitigar', 'SEPLAN', { maturity: 'Mediano', cause: 'Falta de critérios técnicos para composição.', consequence: 'Comissão sem representatividade ou competência necessária.', category: 'Operacional', controls: 'Resolução CP 05/2023 sobre Política de Gestão de Riscos.' }),
+      risk('risk-membros', 'comissao', 'Solicitar a indicação dos membros', 'Indicações de servidores sem disponibilidade real', 4, 3, 'Mitigar', 'SEPLAN', { maturity: 'Fraco', cause: 'Sobrecarga de servidores indicados.', consequence: 'Comissão com baixa efetividade nos trabalhos.', controls: 'Solicitação formal aos setores.' }),
+      risk('risk-minuta', 'comissao', 'Elaborar a minuta da portaria', 'Conflitos de interesse na minuta de criação', 3, 3, 'Mitigar', 'SEPLAN', { maturity: 'Fraco', cause: 'Divergências entre setores sobre prioridades.', consequence: 'Atraso na criação da comissão.' }),
+      risk('risk-aprovacao', 'comissao', 'Encaminhar para aprovação', 'Atraso na aprovação pela Reitoria', 3, 3, 'Mitigar', 'Reitoria', { controlType: 'Detectivo', maturity: 'Mediano', controls: 'Tramitação no SEI.', consequence: 'Postergação dos trabalhos da comissão.' }),
+      risk('risk-publicacao', 'comissao', 'Publicar o ato de constituição', 'Atraso na publicação do ato de criação', 2, 3, 'Mitigar', 'Reitoria', { maturity: 'Mediano', controls: 'Fluxo padrão de publicação.' }),
+      risk('risk-normas', 'estrutura', 'Levantar normas e referências', 'Levantamento incompleto dos normativos relacionados', 3, 4, 'Mitigar', 'SEPLAN', { category: 'Político-legal', cause: 'Falta de capacitação em normativos de gestão de riscos.', consequence: 'Plano elaborado sobre base normativa frágil.', controls: 'Acesso aos normativos do TCU e CGU.' }),
+      risk('risk-modelo', 'estrutura', 'Propor o modelo de acompanhamento', 'Estudo superficial de modelos de outras instituições', 3, 4, 'Mitigar', 'SEPLAN', { cause: 'Tempo limitado para estudo aprofundado.', consequence: 'Plano sem aderência às melhores práticas.', controls: 'Materiais de IFES de referência.' }),
+      risk('risk-dados', 'estrutura', 'Levantar dados institucionais', 'Levantamento de dados institucionais insuficiente', 4, 4, 'Mitigar', 'SEPLAN', { category: 'Estratégico', maturity: 'Fraco', cause: 'Baixa colaboração dos setores.', consequence: 'Plano descolado da realidade institucional.', controls: 'Solicitações via SEI.' }),
+      risk('risk-minuta-plano', 'estrutura', 'Elaborar a minuta do plano', 'Minuta do plano não consensual', 3, 3, 'Mitigar', 'SEPLAN', { maturity: 'Mediano', cause: 'Divergências técnicas entre membros da comissão.', consequence: 'Atraso na conclusão do plano.' }),
+      risk('risk-publicizacao', 'estrutura', 'Aprovar e publicizar', 'Atraso na aprovação e publicização', 3, 4, 'Mitigar', 'SEPLAN', { category: 'Estratégico', controls: 'Fluxo padrão.', consequence: 'Não cumprimento da meta de 80% em 2026.' }),
+      risk('risk-publico', 'capacitacao', 'Definir o público e o conteúdo', 'Público-alvo das capacitações não mapeado', 3, 3, 'Mitigar', 'SEPLAN', { controls: 'Estrutura organizacional do SIORG.' }),
+      risk('risk-instrutores', 'capacitacao', 'Realizar a capacitação', 'Não conseguir articular instrutores qualificados', 4, 4, 'Mitigar', 'SEPLAN', { category: 'Financeiro/Orçamentário', cause: 'Limitação orçamentária.', consequence: 'Adiamento das turmas de capacitação.', controls: 'Articulação com ENAP e IFES.' }),
+      risk('risk-adesao', 'capacitacao', 'Realizar a capacitação', 'Baixa adesão dos gestores às capacitações', 4, 4, 'Mitigar', 'Reitoria', { category: 'Estratégico', controls: 'Convite institucional.' }),
+      risk('risk-material', 'politica', 'Preparar a comunicação para os setores', 'Material de divulgação inadequado ao público', 3, 3, 'Mitigar', 'ASCOM', { category: 'Imagem/Reputação', maturity: 'Mediano', controls: 'ASCOM atua na comunicação institucional.' }),
+    ],
   },
   {
     id: 'rankings', code: '8.1.9', axis: '8 · Governança e Gestão Institucional', objective: '8.1 · Aperfeiçoar Práticas de Governança Pública',
@@ -33,7 +49,7 @@ const pdiItems = [
     metric: { name: 'Rankings com participação da UFCG', unit: 'rankings', baseline: 2, reference: 'Linha de base do PDI', direction: 'up', targets: targets(4), formula: 'Número de rankings com participação no período' },
     measurements: measurement(3), extras: {},
     actions: [action('mapear', 'Mapear rankings nacionais e internacionais', [task('lista', 'Consolidar a lista de rankings', true), task('criterios', 'Verificar os critérios de participação')]), action('inscrever', 'Realizar inscrições nos rankings selecionados', [task('dados', 'Reunir os dados institucionais'), task('envio', 'Enviar as inscrições')])],
-    history: historical('Registrada medição ilustrativa de três rankings em 2026.'),
+    history: historical('Registrada medição ilustrativa de três rankings em 2026.'), risks: [risk('risk-rankings', 'inscrever', 'Enviar as inscrições', 'Dados institucionais incompletos para a inscrição', 3, 3, 'Mitigar', 'SEPLAN')],
   },
   {
     id: 'sustentabilidade', code: '8.2.3', axis: '8 · Governança e Gestão Institucional', objective: '8.2 · Aperfeiçoar Práticas de Gestão Institucional',
@@ -43,7 +59,7 @@ const pdiItems = [
     metric: { name: 'Ações realizadas do PLS', unit: '%', baseline: 0, reference: 'Linha de base do PDI', direction: 'up', targets: { 2026: 20, 2027: 40, 2028: 60, 2029: 80, 2030: 100 }, formula: 'Ações realizadas no PLS ÷ total de ações previstas no PLS × 100' },
     measurements: [], extras: {}, linkedPlan: 'pls',
     actions: [action('monitorar', 'Monitorar a execução do PLS', [task('solicitar', 'Solicitar a atualização dos setores'), task('consolidar', 'Consolidar o acompanhamento')]), action('comite', 'Instituir um Comitê de Gestão Ambiental', [task('propor', 'Propor a composição do comitê')])],
-    history: historical('Criado vínculo de consulta com o PLS. Não há cálculo automático entre os planos.'),
+    history: historical('Criado vínculo de consulta com o PLS. Não há cálculo automático entre os planos.'), risks: [risk('risk-pls', 'monitorar', 'Consolidar o acompanhamento', 'Setores não enviarem as atualizações do PLS', 4, 3, 'Mitigar', 'SEPLAN')],
   },
 ];
 
@@ -60,17 +76,17 @@ const plsItems = [
       action('campanha', 'Realizar campanha de redução do consumo', [task('material', 'Preparar os materiais de divulgação'), task('divulgar', 'Divulgar a campanha nos centros')], 'PRGAF', '2030-12-31'),
       action('divulgacao', 'Divulgar os dados anuais de consumo', [task('relatorio', 'Preparar o resumo anual de consumo')], 'PRGAF', '2026-12-31'),
     ],
-    history: historical('Registrado consumo ilustrativo de 960 resmas. Meta ilustrativa de até 900 resmas.'),
+    history: historical('Registrado consumo ilustrativo de 960 resmas. Meta ilustrativa de até 900 resmas.'), risks: [risk('risk-papel', 'estudo', 'Consolidar o diagnóstico', 'Dados de consumo não serem enviados pelos setores', 3, 4, 'Mitigar', 'PRGAF')],
   },
   {
     id: 'agua', code: '04', axis: '1 · Consumo consciente de bens e serviços', objective: '04 · Racionalizar o consumo de água',
     title: 'Reduzir em 10% o consumo médio de água', owner: 'Prefeituras', partners: 'Direções de centros · SEPLAN',
     description: 'Acompanhar o consumo per capita e promover o uso racional de água nos campi.',
-    source: 'PLS 2025–2030 · Objetivo 04. Valores absolutos e tarefas são exemplos de demonstração.',
+    source: 'PLS 2025–2030 · Objetivo 04. Valores absolutos e etapas são exemplos de demonstração.',
     metric: { name: 'Consumo anual de água per capita', unit: 'm³/pessoa', baseline: 12, reference: 'Média 2024–2025 · exemplo ilustrativo', direction: 'down', targets: targets(10.8), formula: 'Consumo anual per capita ≤ média de 2024–2025 × 0,90', illustrative: true },
     measurements: [], extras: {},
     actions: [action('medidores', 'Ampliar a medição de consumo por edificação', [task('inventario', 'Identificar as edificações sem medição'), task('instalacao', 'Planejar a instalação dos medidores')], 'Prefeituras', '2027-12-31'), action('dadosagua', 'Divulgar os dados de consumo de água', [task('coletaagua', 'Organizar a coleta dos dados'), task('publicaragua', 'Publicar o acompanhamento')], 'Prefeituras', '2026-12-31')],
-    history: historical('Compromisso preparado para receber a primeira medição.'),
+    history: historical('Compromisso preparado para receber a primeira medição.'), risks: [risk('risk-agua', 'medidores', 'Planejar a instalação dos medidores', 'Indisponibilidade de recursos para instalar medidores', 3, 5, 'Mitigar', 'Prefeituras')],
   },
 ];
 

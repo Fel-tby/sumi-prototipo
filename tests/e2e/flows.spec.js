@@ -51,7 +51,7 @@ test('PDI: árvore, objetivos, seleção, filtros combinados e retorno', async (
   await expect(detail(page).getByRole('heading', { level: 2 })).toHaveText('Ampliar a participação em rankings universitários');
 });
 
-test('PDI: concluir e reabrir tarefa, persistir e preservar indicador', async ({ page }) => {
+test('PDI: concluir e reabrir etapa, persistir e preservar indicador', async ({ page }) => {
   await openPdi(page);
   const checkbox = page.getByRole('checkbox', { name: 'Elaborar a minuta da portaria', exact: true });
   await checkbox.check();
@@ -61,32 +61,32 @@ test('PDI: concluir e reabrir tarefa, persistir e preservar indicador', async ({
   await page.getByRole('tab', { name: 'Indicador e metas' }).click();
   await expect(page.locator('.current-result strong')).toHaveText('20 %');
   await page.getByRole('tab', { name: 'Histórico' }).click();
-  await expect(page.locator('.timeline')).toContainText('Concluída a tarefa: Elaborar a minuta da portaria.');
-  await page.getByRole('tab', { name: 'Ações e tarefas' }).click();
+  await expect(page.locator('.timeline')).toContainText('Concluída a etapa: Elaborar a minuta da portaria.');
+  await page.getByRole('tab', { name: 'Ações e etapas' }).click();
   await checkbox.uncheck();
   await expect(page.locator('.execution-summary strong')).toHaveText('20%');
   await page.getByRole('tab', { name: 'Histórico' }).click();
-  await expect(page.locator('.timeline')).toContainText('Reaberta a tarefa');
+  await expect(page.locator('.timeline')).toContainText('Reaberta a etapa');
 });
 
-test('ações: recolher, expandir, adicionar tarefa, cancelar e rejeitar espaços', async ({ page }) => {
+test('ações: recolher, expandir, adicionar etapa, cancelar e rejeitar espaços', async ({ page }) => {
   await openPdi(page);
   const action = page.locator('.action-card').first();
   await action.getByRole('button', { name: /^01 Constituir a comissão/ }).click();
   await expect(action.getByRole('checkbox')).toHaveCount(0);
   await action.getByRole('button', { name: /^01 Constituir a comissão/ }).click();
-  await action.getByRole('button', { name: /Adicionar tarefa/ }).click();
-  await page.getByLabel('Nome da tarefa', { exact: true }).fill('Rascunho descartado');
+  await action.getByRole('button', { name: /Adicionar etapa/ }).click();
+  await page.getByLabel('Nome da etapa', { exact: true }).fill('Rascunho descartado');
   await action.getByRole('button', { name: 'Cancelar', exact: true }).click();
   await expect(page.getByRole('checkbox', { name: 'Rascunho descartado' })).toHaveCount(0);
-  await action.getByRole('button', { name: /Adicionar tarefa/ }).click();
-  await page.getByLabel('Nome da tarefa', { exact: true }).fill('   ');
+  await action.getByRole('button', { name: /Adicionar etapa/ }).click();
+  await page.getByLabel('Nome da etapa', { exact: true }).fill('   ');
   await action.getByRole('button', { name: 'Adicionar', exact: true }).click();
-  await expect(page.getByRole('alert')).toContainText('Informe o nome da tarefa');
-  await page.getByLabel('Nome da tarefa', { exact: true }).fill('Verificar o ato publicado');
+  await expect(page.getByRole('alert')).toContainText('Informe o nome da etapa');
+  await page.getByLabel('Nome da etapa', { exact: true }).fill('Verificar o ato publicado');
   await action.getByRole('button', { name: 'Adicionar', exact: true }).click();
   await expect(page.getByRole('checkbox', { name: 'Verificar o ato publicado', exact: true })).toBeVisible();
-  await expect(page.locator('.execution-summary')).toContainText('2/11 tarefas');
+  await expect(page.locator('.execution-summary')).toContainText('2/11 etapas');
 });
 
 test('PDI: metas futuras, valor zero, vazio e revisão com histórico', async ({ page }) => {
@@ -169,7 +169,7 @@ test('PLS: navegação por objetivo, responsáveis e indicador de redução', as
   await page.getByRole('button', { name: 'Limpar filtros', exact: true }).click();
   await page.getByRole('navigation', { name: 'Itens do planejamento' }).getByRole('link', { name: /Compromisso 01/ }).click();
   await page.getByRole('checkbox', { name: 'Preparar os materiais de divulgação', exact: true }).check();
-  await expect(page.locator('.execution-summary')).toContainText('3/5 tarefas');
+  await expect(page.locator('.execution-summary')).toContainText('3/5 etapas');
 });
 
 test('PDI e PLS: vínculo navegável sem cálculo implícito', async ({ page }) => {
@@ -183,7 +183,47 @@ test('PDI e PLS: vínculo navegável sem cálculo implícito', async ({ page }) 
   await expect(page.locator('.current-result')).toContainText('Sem medição');
 });
 
-test('novo PDI: ciclo completo de criação de item, ação, tarefa e medição', async ({ page }) => {
+  test('riscos: célula filtra combinação exata e legenda filtra categoria', async ({ page }) => {
+    await openPdi(page);
+    await page.getByRole('tab', { name: /Riscos/ }).click();
+    await expect(page.locator('.risk-card')).toHaveCount(14);
+    await page.getByRole('button', { name: /Probabilidade 3, impacto 3/ }).click();
+    await expect(page.locator('.risk-card')).toHaveCount(5);
+    await expect(page.locator('.risk-filter')).toContainText('P3 × I3');
+    await page.getByRole('button', { name: /Alto/ }).first().click();
+    await expect(page.locator('.risk-filter')).toContainText('Todos os riscos desta faixa');
+    await expect(page.locator('.risk-card')).toHaveCount(10);
+  });
+
+  test('riscos: adicionar, calcular, detalhar e editar pela ação', async ({ page }) => {
+    await openPdi(page);
+    await page.locator('.action-card').first().getByRole('button', { name: /Adicionar risco/ }).click();
+    const dialog = page.getByRole('dialog');
+    await dialog.getByLabel('Risco do processo', { exact: true }).fill('Falha na publicação do ato');
+    await dialog.getByLabel('Causa do risco', { exact: true }).fill('Tramitação institucional lenta');
+    await dialog.getByLabel('Efeito / consequência', { exact: true }).fill('A comissão não inicia os trabalhos');
+    await dialog.getByLabel('Controles existentes', { exact: true }).fill('Fluxo de publicação acompanhado pela SEPLAN');
+    await dialog.getByLabel('Plano de tratamento', { exact: true }).fill('Acompanhar a tramitação até a publicação');
+    await dialog.getByLabel('Responsável pelo tratamento', { exact: true }).fill('Reitoria');
+    await dialog.getByLabel('Probabilidade (P)', { exact: true }).selectOption('5');
+    await dialog.getByLabel('Impacto (I)', { exact: true }).selectOption('5');
+    await dialog.getByLabel('Maturidade do controle', { exact: true }).selectOption('Inexistente');
+    await expect(dialog.locator('.risk-calculation-value.critical')).toHaveCount(2);
+    await expect(dialog.locator('.risk-calculation')).toContainText('25');
+    await dialog.getByRole('button', { name: 'Adicionar risco', exact: true }).click();
+    await page.getByRole('tab', { name: /Riscos/ }).click();
+    await expect(page.locator('.risk-card')).toHaveCount(15);
+    const card = page.locator('.risk-card').filter({ hasText: 'Falha na publicação do ato' });
+    await card.getByRole('button', { name: 'Detalhar', exact: true }).click();
+    await expect(card).toContainText('Tramitação institucional lenta');
+    await card.getByRole('button', { name: 'Editar', exact: true }).click();
+    await expect(page.getByRole('dialog')).toContainText('Editar risco');
+    await page.getByRole('dialog').getByLabel('Probabilidade (P)', { exact: true }).selectOption('3');
+    await page.getByRole('dialog').getByRole('button', { name: 'Salvar alterações', exact: true }).click();
+    await expect(card).toContainText('RI 15');
+  });
+
+test('novo PDI: ciclo completo de criação de item, ação, etapa e medição', async ({ page }) => {
   await newPlan(page);
   await page.getByRole('button', { name: 'Criar primeiro item', exact: true }).click();
   await fillItem(page);
@@ -193,9 +233,9 @@ test('novo PDI: ciclo completo de criação de item, ação, tarefa e medição'
   await page.getByLabel('Nome da ação', { exact: true }).fill('Reunir informações dos setores');
   await page.getByLabel('Prazo', { exact: true }).fill('2026-10-30');
   await page.getByRole('button', { name: 'Adicionar ação', exact: true }).last().click();
-  await expect(page.getByText('Esta ação ainda não possui tarefas.')).toBeVisible();
-  await page.getByRole('button', { name: /Adicionar tarefa em Reunir/ }).click();
-  await page.getByLabel('Nome da tarefa', { exact: true }).fill('Solicitar os relatórios');
+  await expect(page.getByText('Esta ação ainda não possui etapas.')).toBeVisible();
+  await page.getByRole('button', { name: /Adicionar etapa em Reunir/ }).click();
+  await page.getByLabel('Nome da etapa', { exact: true }).fill('Solicitar os relatórios');
   await page.getByRole('button', { name: 'Adicionar', exact: true }).click();
   await page.getByRole('checkbox', { name: 'Solicitar os relatórios', exact: true }).check();
   await expect(page.locator('.execution-summary strong')).toHaveText('100%');
