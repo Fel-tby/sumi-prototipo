@@ -1,0 +1,41 @@
+const permissions = [
+  'plan.read_published', 'plan.read_internal', 'plan.manage', 'model.manage', 'item.edit',
+  'action.manage', 'stage.update', 'indicator.edit_target', 'result.create', 'risk.read',
+  'risk.manage', 'history.read', 'history.comment',
+];
+
+const globalGrants = (values) => values.map((permission) => ({ permission, scope: { type: 'global' } }));
+const planGrants = (planId, values) => values.map((permission) => ({ permission, scope: { type: 'plan', planId } }));
+
+export const developmentSessions = Object.freeze({
+  administrator: {
+    authenticated: true,
+    user: { id: 'dev-admin', name: 'Usuário SEPLAN', email: 'usuario@ufcg.edu.br' },
+    roles: [{ code: 'STRATEGIC_ADMIN', name: 'Administrador Estratégico' }],
+    grants: globalGrants(permissions),
+  },
+  public: {
+    authenticated: false,
+    user: null,
+    roles: [],
+    grants: globalGrants(['plan.read_published']),
+  },
+  axis_contributor: {
+    authenticated: true,
+    user: { id: 'dev-contributor', name: 'Usuário do Eixo', email: 'gestor@ufcg.edu.br' },
+    roles: [{ code: 'AXIS_CONTRIBUTOR', name: 'Gestor do Eixo' }],
+    grants: [
+      ...globalGrants(['plan.read_published']),
+      ...planGrants('pdi', ['plan.read_internal', 'item.edit', 'stage.update', 'result.create', 'risk.read', 'history.read', 'history.comment']),
+    ],
+  },
+  axis_reviewer: {
+    authenticated: true,
+    user: { id: 'dev-reviewer', name: 'Responsável do Eixo', email: 'responsavel@ufcg.edu.br' },
+    roles: [{ code: 'AXIS_REVIEWER', name: 'Responsável pelo Eixo' }],
+    grants: [
+      ...globalGrants(['plan.read_published']),
+      ...planGrants('pdi', ['plan.read_internal', 'risk.read', 'history.read']),
+    ],
+  },
+});

@@ -32,7 +32,7 @@ export const metricAchievement = (item, year) => {
 export const metricTone = (item, year) => {
   const achievement = metricAchievement(item, year);
   if (achievement == null) return 'neutral';
-  return achievement >= 75 ? 'green' : achievement > 25 ? 'attention' : 'critical';
+  return achievement >= 100 ? 'green' : achievement > 25 ? 'attention' : 'critical';
 };
 export const riskScore = (probability, impact) => probability * impact;
 export const riskLevelFromScore = (score) => {
@@ -49,7 +49,7 @@ export function createPlan(template, values) {
   if (!values.name.trim() || !values.shortName.trim() || !validateRange(values.start, values.end)) throw new Error('Informe nome, sigla e uma vigência válida de até 11 anos.');
   return { ...values, id: uid(), name: values.name.trim(), shortName: values.shortName.trim(), template: structuredClone(template), type: template.type, items: [], created: true };
 }
-export const historyEntry = (text) => ({ id: uid(), at: new Date().toISOString(), text, actor: 'Participante da demonstração' });
+export const historyEntry = (text, actor = 'Participante da demonstração') => ({ id: uid(), at: new Date().toISOString(), text, actor });
 export function restoreState(raw, fallback) {
   if (!raw) return { data: fallback(), recovered: false };
   try {

@@ -134,6 +134,8 @@ test('teclado: foco do modal, Escape, retorno de foco e setas nas abas', async (
   await page.keyboard.press('End');
   await expect(page.getByRole('tab', { name: 'Histórico' })).toHaveAttribute('aria-selected', 'true');
   await page.keyboard.press('ArrowLeft');
+  await expect(page.getByRole('tab', { name: /Riscos/ })).toHaveAttribute('aria-selected', 'true');
+  await page.keyboard.press('ArrowLeft');
   await expect(page.getByRole('tab', { name: 'Indicador e metas' })).toHaveAttribute('aria-selected', 'true');
   await page.keyboard.press('Home');
   await expect(page.getByRole('tab', { name: 'Ações e etapas' })).toHaveAttribute('aria-selected', 'true');

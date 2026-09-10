@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { initialState } from '../src/data.js';
 import { createPlan, executionStatus, latestMeasurement, metricAchievement, metricStatus, metricTone, normalize, restoreState, riskLevel, riskLevelLabel, taskProgress, validateRange, years } from '../src/domain.js';
+import { can, PERMISSIONS } from '../src/auth/permissions.js';
+import { normalizeSession } from '../src/auth/session-client.js';
 
 test('os dois planos possuem estruturas e exemplos distintos', () => {
   const state = initialState();
@@ -79,4 +81,39 @@ test('cada restauração é independente e a busca ignora acentos', () => {
   a.plans[0].items.pop();
   assert.equal(initialState().plans[0].items.length, 3);
   assert.equal(normalize('Água e AÇÕES'), 'agua e acoes');
+});
+
+test('concessões controlam a ação sem depender do nome do papel', () => {
+  const session = {
+    roles: [{ code: 'QUALQUER_PAPEL', name: 'Nome não usado pela autorização' }],
+    grants: [{ permission: PERMISSIONS.VIEW_PUBLISHED_PLAN, scope: { type: 'global' } }],
+  };
+  assert.equal(can(session, PERMISSIONS.VIEW_PUBLISHED_PLAN), true);
+  assert.equal(can(session, PERMISSIONS.VIEW_INTERNAL_PLAN), false);
+  assert.equal(can(session, PERMISSIONS.RECORD_RESULT), false);
+});
+
+test('concessões respeitam escopos globais, de plano, eixo e item', () => {
+  const planSession = { grants: [{ permission: PERMISSIONS.RECORD_RESULT, scope: { type: 'plan', planId: 'pdi' } }] };
+  assert.equal(can(planSession, PERMISSIONS.RECORD_RESULT, { planId: 'pdi', itemId: 'a' }), true);
+  assert.equal(can(planSession, PERMISSIONS.RECORD_RESULT, { planId: 'pls', itemId: 'a' }), false);
+
+  const axisSession = { grants: [{ permission: PERMISSIONS.UPDATE_STAGE, scope: { type: 'axis', planId: 'pdi', axisId: 'eixo-8' } }] };
+  assert.equal(can(axisSession, PERMISSIONS.UPDATE_STAGE, { planId: 'pdi', axisId: 'eixo-8', itemId: 'a' }), true);
+  assert.equal(can(axisSession, PERMISSIONS.UPDATE_STAGE, { planId: 'pdi', axisId: 'eixo-7', itemId: 'a' }), false);
+
+  const itemSession = { grants: [{ permission: PERMISSIONS.EDIT_ITEM, scope: { type: 'item', planId: 'pdi', itemId: 'riscos' } }] };
+  assert.equal(can(itemSession, PERMISSIONS.EDIT_ITEM, { planId: 'pdi', itemId: 'riscos' }), true);
+  assert.equal(can(itemSession, PERMISSIONS.EDIT_ITEM, { planId: 'pdi', itemId: 'rankings' }), false);
+});
+
+test('adaptador normaliza sessão e rejeita contrato autenticado inválido', () => {
+  const anonymous = normalizeSession({ authenticated: false });
+  assert.equal(anonymous.authenticated, false);
+  assert.equal(can(anonymous, PERMISSIONS.VIEW_PUBLISHED_PLAN), true);
+
+  const authenticated = normalizeSession({ authenticated: true, user: { id: 42, name: 'Pessoa' }, roles: [], grants: [{ permission: PERMISSIONS.MANAGE_PLAN }] });
+  assert.equal(authenticated.user.id, '42');
+  assert.equal(can(authenticated, PERMISSIONS.MANAGE_PLAN), true);
+  assert.throws(() => normalizeSession({ authenticated: true, user: {}, roles: [], grants: [] }));
 });
