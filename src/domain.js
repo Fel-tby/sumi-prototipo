@@ -22,6 +22,26 @@ export const metricStatus = (item, year) => {
   const reached = item.metric.direction === 'down' ? measurement.value <= target : measurement.value >= target;
   return reached ? 'Meta atingida' : 'Meta não atingida';
 };
+export const metricAchievement = (item, year) => {
+  const target = item.metric.targets[year];
+  const measurement = latestMeasurement(item, year);
+  if (target == null || !measurement || (target === 0 && item.metric.direction === 'down')) return null;
+  const percent = item.metric.direction === 'down' ? target / measurement.value * 100 : measurement.value / target * 100;
+  return percent == null ? null : Math.round(Math.min(percent, 100));
+};
+export const metricTone = (item, year) => {
+  const achievement = metricAchievement(item, year);
+  if (achievement == null) return 'neutral';
+  return achievement >= 75 ? 'green' : achievement > 25 ? 'attention' : 'critical';
+};
+export const riskScore = (probability, impact) => probability * impact;
+export const riskLevelFromScore = (score) => {
+  return score <= 3 ? 'low' : score <= 6 ? 'moderate' : score <= 12 ? 'high' : 'critical';
+};
+export const riskLevel = (probability, impact) => riskLevelFromScore(riskScore(probability, impact));
+export const riskLevelLabel = (level) => ({ low: 'Baixo', moderate: 'Moderado', high: 'Alto', critical: 'Crítico' })[level];
+export const controlFactor = (maturity) => ({ Inexistente: 1, Fraco: 0.8, Mediano: 0.6, Satisfatório: 0.4, Forte: 0.2 })[maturity] ?? 1;
+export const residualRisk = (probability, impact, maturity) => riskScore(probability, impact) * controlFactor(maturity);
 export function validateRange(start, end) {
   return Number.isInteger(start) && Number.isInteger(end) && start >= 2020 && end <= 2100 && end >= start && end - start <= 10;
 }

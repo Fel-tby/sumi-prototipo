@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Button, Field, FormEnd, Icon, Modal } from './ui.jsx';
-import { createPlan, historyEntry, normalize, uid, years } from './domain.js';
+import { controlFactor, createPlan, historyEntry, normalize, residualRisk, riskLevel, riskLevelFromScore, riskLevelLabel, riskScore, uid, years } from './domain.js';
 
 export function PlanForm({ templates, initialTemplate = 'pdi', onClose, onSave }) {
   const [templateId, setTemplateId] = useState(initialTemplate);
@@ -16,7 +16,7 @@ export function PlanForm({ templates, initialTemplate = 'pdi', onClose, onSave }
     <form onSubmit={submit}>
       <div className="form-body">
         <Field label="Modelo"><select value={templateId} onChange={(e) => setTemplateId(e.target.value)}>{templates.map((t) => <option key={t.id} value={t.id}>{t.type} · {t.name}</option>)}</select></Field>
-        <div className="structure-preview">{[template.labels.axis, template.labels.objective, template.labels.item, 'Ação', 'Tarefa'].map((name, i) => <React.Fragment key={i}>{i > 0 && <Icon name="chevron" size={12} />}<span>{name}</span></React.Fragment>)}</div>
+        <div className="structure-preview">{[template.labels.axis, template.labels.objective, template.labels.item, 'Ação', 'Etapa'].map((name, i) => <React.Fragment key={i}>{i > 0 && <Icon name="chevron" size={12} />}<span>{name}</span></React.Fragment>)}</div>
         <Field label="Nome do planejamento"><input autoFocus name="name" required maxLength={120} placeholder="Ex.: Planejamento do Centro de Tecnologia" /></Field>
         <div className="form-grid three"><Field label="Sigla"><input name="shortName" maxLength={12} required placeholder="Ex.: PCT" /></Field><Field label="Ano inicial"><input name="start" type="number" min="2020" max="2100" defaultValue="2026" required /></Field><Field label="Ano final"><input name="end" type="number" min="2020" max="2100" defaultValue="2030" required /></Field></div>
         <p className="hint">O planejamento será criado sem conteúdo. Os campos do modelo estarão disponíveis em cada {template.labels.item.toLowerCase()}.</p>
@@ -102,6 +102,36 @@ export function ActionForm({ plan, item, onClose, onSave }) {
     onSave({ id: uid(), title: values.title.trim(), owner: values.owner.trim(), deadline: values.deadline, tasks: [] });
   }
   return <Modal title="Adicionar ação" onClose={onClose}><form onSubmit={submit}><div className="form-body"><Field label="Nome da ação"><input name="title" required maxLength={180} autoFocus /></Field><Field label="Unidade responsável"><input name="owner" required defaultValue={item.owner} maxLength={80} /></Field><Field label="Prazo"><input name="deadline" type="date" min={`${plan.start}-01-01`} max={`${plan.end}-12-31`} required /></Field></div><FormEnd onClose={onClose} submit="Adicionar ação" error={error} /></form></Modal>;
+}
+
+export function RiskForm({ item, action, risk, onClose, onSave }) {
+  const [probability, setProbability] = useState(risk?.probability || 3);
+  const [impact, setImpact] = useState(risk?.impact || 3);
+  const [maturity, setMaturity] = useState(risk?.maturity || 'Fraco');
+  const [error, setError] = useState('');
+  const level = riskLevel(probability, impact);
+  const score = riskScore(probability, impact);
+  const residual = residualRisk(probability, impact, maturity);
+  const field = (name) => risk?.[name] || '';
+  function submit(event) {
+    event.preventDefault();
+    const values = Object.fromEntries(new FormData(event.currentTarget));
+    const required = ['title', 'cause', 'consequence', 'controls', 'treatment', 'treatmentOwner'];
+    if (required.some((name) => !values[name].trim())) return setError('Preencha os campos principais do risco.');
+    onSave({ ...(risk || {}), id: risk?.id || uid(), actionId: action.id, stage: values.stage.trim(), title: values.title.trim(), strategicRisk: values.strategicRisk.trim(), cause: values.cause.trim(), consequence: values.consequence.trim(), category: values.category, probability, impact, controls: values.controls.trim(), controlType: values.controlType, maturity, response: values.response, treatment: values.treatment.trim(), treatmentOwner: values.treatmentOwner.trim(), deadline: values.deadline, execution: Number(values.execution || 0), situation: values.situation, review: values.review, status: values.status });
+  }
+  return <Modal title={risk ? 'Editar risco' : 'Adicionar risco'} subtitle={`${item.code} · ${action.title}`} onClose={onClose} wide><form onSubmit={submit}><div className="form-body">
+    <div className="risk-form-context"><span><b>Ação:</b> {action.title}</span><span><b>Etapa:</b> {risk?.stage || 'Será definida no formulário'}</span></div>
+    <h3>Identificação do risco</h3><Field label="Etapa (etapa)" help="Associe o risco à etapa específica em que ele foi identificado."><select name="stage" defaultValue={field('stage') || action.tasks[0]?.title || ''}>{action.tasks.map((task) => <option key={task.id}>{task.title}</option>)}<option value="">Outra etapa a descrever</option></select></Field>
+    <Field label="Risco do processo"><textarea name="title" rows="2" required maxLength={240} defaultValue={field('title')} placeholder="Ex.: Dados institucionais incompletos para a inscrição" /></Field>
+    <Field label="Risco estratégico da iniciativa"><textarea name="strategicRisk" rows="2" maxLength={240} defaultValue={field('strategicRisk')} placeholder="Ex.: Não cumprir a meta institucional no prazo" /></Field>
+    <div className="form-grid"><Field label="Causa do risco"><textarea name="cause" rows="2" required maxLength={300} defaultValue={field('cause')} /></Field><Field label="Efeito / consequência"><textarea name="consequence" rows="2" required maxLength={300} defaultValue={field('consequence')} /></Field></div>
+    <Field label="Categoria do risco"><select name="category" defaultValue={field('category') || 'Operacional'}>{['Operacional', 'Imagem/Reputação', 'Político-legal', 'Financeiro/Orçamentário', 'Ambiental', 'Estratégico', 'Conformidade'].map((option) => <option key={option}>{option}</option>)}</select></Field>
+    <h3>Avaliação e controles</h3><div className="form-grid three"><Field label="Probabilidade (P)"><select value={probability} onChange={(event) => setProbability(Number(event.target.value))}>{[1, 2, 3, 4, 5].map((value) => <option key={value}>{value}</option>)}</select></Field><Field label="Impacto (I)"><select value={impact} onChange={(event) => setImpact(Number(event.target.value))}>{[1, 2, 3, 4, 5].map((value) => <option key={value}>{value}</option>)}</select></Field><Field label="Tipo de controle"><select name="controlType" defaultValue={field('controlType') || 'Preventivo'}>{['Preventivo', 'Detectivo', 'Corretivo'].map((option) => <option key={option}>{option}</option>)}</select></Field></div>
+    <Field label="Controles existentes"><textarea name="controls" rows="2" required maxLength={300} defaultValue={field('controls')} placeholder="Descreva os controles já existentes" /></Field><Field label="Maturidade do controle"><select value={maturity} onChange={(event) => setMaturity(event.target.value)}>{[['Inexistente', '1,0'], ['Fraco', '0,8'], ['Mediano', '0,6'], ['Satisfatório', '0,4'], ['Forte', '0,2']].map(([name, factor]) => <option key={name} value={name}>{name} · FC {factor}</option>)}</select></Field>
+    <div className="risk-calculation"><div className={`risk-calculation-value ${level}`}><span>Risco inerente (RI)</span><strong>{score}</strong><b>{riskLevelLabel(level)}</b><small>P × I = {probability} × {impact}</small></div><div className={`risk-calculation-value ${riskLevelFromScore(residual)}`}><span>Risco residual (RR)</span><strong>{residual.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}</strong><b>{riskLevelLabel(riskLevelFromScore(residual))}</b><small>RI × FC = {score} × {controlFactor(maturity)}</small></div></div>
+    <h3>Resposta e acompanhamento</h3><div className="form-grid"><Field label="Resposta ao risco"><select name="response" defaultValue={field('response') || 'Mitigar'}>{['Aceitar', 'Mitigar', 'Compartilhar', 'Evitar'].map((option) => <option key={option}>{option}</option>)}</select></Field><Field label="Responsável pelo tratamento"><input name="treatmentOwner" required maxLength={100} defaultValue={field('treatmentOwner') || item.owner} /></Field></div><Field label="Plano de tratamento"><textarea name="treatment" rows="2" required maxLength={400} defaultValue={field('treatment')} placeholder="Controles propostos para reduzir o risco" /></Field><div className="form-grid three"><Field label="Prazo de conclusão"><input name="deadline" type="date" defaultValue={field('deadline')} /></Field><Field label="Execução (%)"><input name="execution" type="number" min="0" max="100" defaultValue={risk?.execution ?? 0} /></Field><Field label="Frequência de revisão"><select name="review" defaultValue={field('review') || 'Trimestral'}>{['Mensal', 'Trimestral', 'Semestral', 'Anual'].map((option) => <option key={option}>{option}</option>)}</select></Field></div><div className="form-grid"><Field label="Situação"><select name="situation" defaultValue={field('situation') || 'Não iniciada'}>{['Não iniciada', 'Em andamento', 'Concluída'].map((option) => <option key={option}>{option}</option>)}</select></Field><Field label="Status do risco"><select name="status" defaultValue={field('status') || 'Ativo'}>{['Ativo', 'Mitigado', 'Encerrado', 'Reclassificado'].map((option) => <option key={option}>{option}</option>)}</select></Field></div>
+  </div><FormEnd onClose={onClose} submit={risk ? 'Salvar alterações' : 'Adicionar risco'} error={error} /></form></Modal>;
 }
 
 export function MeasurementForm({ plan, item, year, onClose, onSave }) {

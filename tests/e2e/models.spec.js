@@ -102,7 +102,7 @@ test('rota inválida e dados locais corrompidos têm recuperação', async ({ pa
   await expect(page.locator('.warning-strip')).toHaveCount(0);
   await page.goto('/#/plano/pdi?item=inexistente&tab=invalida&year=9999');
   await expect(detail(page).getByRole('heading', { level: 2 })).toContainText('Gestão de Riscos');
-  await expect(page.getByRole('tab', { name: 'Ações e tarefas' })).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByRole('tab', { name: 'Ações e etapas' })).toHaveAttribute('aria-selected', 'true');
 });
 
 test('armazenamento indisponível mantém a sessão funcional com aviso', async ({ page }) => {
@@ -128,7 +128,7 @@ test('teclado: foco do modal, Escape, retorno de foco e setas nas abas', async (
   await expect(page.getByRole('dialog')).not.toBeVisible();
   await expect(trigger).toBeFocused();
   await openPdi(page);
-  await page.getByRole('tab', { name: 'Ações e tarefas' }).focus();
+  await page.getByRole('tab', { name: 'Ações e etapas' }).focus();
   await page.keyboard.press('ArrowRight');
   await expect(page.getByRole('tab', { name: 'Indicador e metas' })).toHaveAttribute('aria-selected', 'true');
   await page.keyboard.press('End');
@@ -136,7 +136,7 @@ test('teclado: foco do modal, Escape, retorno de foco e setas nas abas', async (
   await page.keyboard.press('ArrowLeft');
   await expect(page.getByRole('tab', { name: 'Indicador e metas' })).toHaveAttribute('aria-selected', 'true');
   await page.keyboard.press('Home');
-  await expect(page.getByRole('tab', { name: 'Ações e tarefas' })).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByRole('tab', { name: 'Ações e etapas' })).toHaveAttribute('aria-selected', 'true');
 });
 
 test('cancelamentos de resultado e metas não alteram valores', async ({ page }) => {

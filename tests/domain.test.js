@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { initialState } from '../src/data.js';
-import { createPlan, executionStatus, latestMeasurement, metricStatus, normalize, restoreState, taskProgress, validateRange, years } from '../src/domain.js';
+import { createPlan, executionStatus, latestMeasurement, metricAchievement, metricStatus, metricTone, normalize, restoreState, riskLevel, riskLevelLabel, taskProgress, validateRange, years } from '../src/domain.js';
 
 test('os dois planos possuem estruturas e exemplos distintos', () => {
   const state = initialState();
@@ -11,14 +11,14 @@ test('os dois planos possuem estruturas e exemplos distintos', () => {
   assert.equal(state.plans[1].items.length, 2);
   assert.equal(state.plans[0].items[2].linkedPlan, 'pls');
 });
-test('tarefas não alteram o resultado do indicador', () => {
+test('etapas não alteram o resultado do indicador', () => {
   const item = initialState().plans[0].items[0];
   assert.deepEqual(taskProgress(item), { done: 2, total: 10, percent: 20 });
   item.actions[0].tasks[2].done = true;
   assert.equal(taskProgress(item).percent, 30);
   assert.equal(latestMeasurement(item, 2026).value, 20);
 });
-test('execução cobre os três estados e ação sem tarefas', () => {
+test('execução cobre os três estados e ação sem etapas', () => {
   const item = { actions: [] };
   assert.equal(executionStatus(item), 'Não iniciada');
   item.actions = [{ tasks: [{ done: false }, { done: false }] }];
@@ -41,6 +41,18 @@ test('meta zero, meta ausente, sem medição e sentido de melhoria', () => {
   assert.equal(metricStatus(paper, 2026), 'Meta atingida');
   paper.measurements.push({ year: 2026, value: 901 });
   assert.equal(metricStatus(paper, 2026), 'Meta não atingida');
+});
+test('metas e matriz produzem classificações visuais', () => {
+  const state = initialState();
+  const pdi = state.plans[0].items[0];
+  assert.equal(metricAchievement(pdi, 2026), 25);
+  assert.equal(metricTone(pdi, 2026), 'critical');
+  const paper = state.plans[1].items[0];
+  assert.equal(metricAchievement(paper, 2026), 94);
+  assert.equal(metricTone(paper, 2026), 'attention');
+  assert.equal(riskLevel(4, 4), 'critical');
+  assert.equal(riskLevel(2, 2), 'moderate');
+  assert.equal(riskLevelLabel(riskLevel(3, 5)), 'Crítico');
 });
 test('vigência limita períodos invertidos, fracionários e excessivos', () => {
   assert.equal(validateRange(2026, 2030), true);
