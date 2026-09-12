@@ -1,116 +1,152 @@
 import React, { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { initialState } from './data.js';
-import { actionProgress, controlFactor, executionProgress, executionStatus, formatDate, formatMetricValue, formatNumber, historyEntry, latestMeasurement, metricAchievement, metricResult, metricStatus, metricTone, normalize, residualRisk, restoreState, riskLevel, riskLevelLabel, riskScore, STORAGE_KEY, taskOverdue, taskProgress, uid, years } from './domain.js';
-import { Badge, Button, Empty, Field, Icon, Modal } from './ui.jsx';
-import { ActionForm, ItemForm, MeasurementForm, PlanForm, RiskForm, TargetsForm, TemplateForm } from './forms.jsx';
+import { actionProgress, axisFor, axisLabel, controlFactor, currentPeriod, executionProgress, executionStatus, formatDate, formatMetricValue, formatNumber, historyEntry, latestMeasurement, metricAchievement, metricResult, metricStatus, metricTone, normalize, objectiveFor, periodLabel, periods, residualRisk, reviewStatusLabel, riskLevel, riskLevelLabel, riskScore, stageStatusLabel, stageStatusLabels, taskOverdue, uid } from './domain.js';
+import { Badge, Button, Empty, Field, Icon } from './ui.jsx';
+import { ActionForm, ItemForm, MeasurementForm, PlanForm, ReviewForm, RiskForm, StructureForm, TargetsForm, TemplateForm } from './forms.jsx';
 import { SessionProvider, useSession } from './auth/context.jsx';
 import { PERMISSIONS, resourceFor } from './auth/permissions.js';
+import { createPlanningClient } from './planning-client.js';
 import './styles.css';
 
-const planUrl = (id, item, tab = 'acoes', year) => `/plano/${id}${item ? `?item=${item}&tab=${tab}${year ? `&year=${year}` : ''}` : ''}`;
+const planningClient = createPlanningClient();
+const SIDEBAR_PREFERENCE_KEY = 'sumi.ui.sidebar-collapsed';
+const planUrl = (id, item, tab = 'acoes', period) => `/plano/${id}${item ? `?item=${item}&tab=${tab}${period ? `&period=${period}` : ''}` : ''}`;
 const navigate = (path) => { window.location.hash = path; };
-function readRoute() {
-  const [path, query] = (window.location.hash.slice(1) || '/planejamentos').split('?');
-  return { path, query: new URLSearchParams(query) };
-}
-const statusTone = (status) => status === 'Concluída' || status === 'Meta atingida' ? 'green' : status === 'Em andamento' ? 'blue' : 'neutral';
-function Progress({ done, total, percent, label = 'ações', compact = false }) {
+const readRoute = () => { const [path, query] = (window.location.hash.slice(1) || '/inicio').split('?'); return { path, query: new URLSearchParams(query) }; };
+const statusTone = (status) => status === 'Concluída' || status === 'Meta atingida' || status === 'Validado' ? 'green' : status === 'Em andamento' || status === 'Aguardando validação' ? 'blue' : status === 'Correção solicitada' ? 'attention' : 'neutral';
+const readSidebarPreference = () => { try { return localStorage.getItem(SIDEBAR_PREFERENCE_KEY) === 'true'; } catch { return false; } };
+
+function Progress({ done, total, percent, label = 'etapas', compact = false }) {
   const value = percent ?? (total ? done / total * 100 : 0);
   return <div className={`progress-block ${compact ? 'compact' : ''}`}><div className="progress-track" role="progressbar" aria-label={`Execução das ${label}`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(value)}><span style={{ width: `${value}%` }} /></div><span>{Math.round(value)}% {label}</span></div>;
 }
 
 function AppGate() {
   const auth = useSession();
-  if (auth.status === 'loading') return <main className="session-state" aria-busy="true"><p>Carregando…</p></main>;
-  if (auth.status === 'error') return <main className="session-state"><Empty title="Não foi possível iniciar o SUMI" action={<Button variant="primary" onClick={auth.reload}>Tentar novamente</Button>}>A sessão não pôde ser carregada. Tente novamente em alguns instantes.</Empty></main>;
-  return <App auth={auth} />;
+  const [workspace, setWorkspace] = useState({ status: 'loading', data: null, error: null });
+  const load = () => {
+    const controller = new AbortController();
+    setWorkspace({ status: 'loading', data: null, error: null });
+    planningClient.load({ signal: controller.signal }).then((data) => setWorkspace({ status: 'ready', data, error: null })).catch((error) => { if (error.name !== 'AbortError') setWorkspace({ status: 'error', data: null, error }); });
+    return () => controller.abort();
+  };
+  useEffect(load, []);
+  if (auth.status === 'loading' || workspace.status === 'loading') return <main className="session-state" aria-busy="true"><p>Carregando…</p></main>;
+  if (auth.status === 'error') return <main className="session-state"><Empty title="Não foi possível iniciar o SUMI" action={<Button variant="primary" onClick={auth.reload}>Tentar novamente</Button>}>Sua sessão não pôde ser carregada.</Empty></main>;
+  if (workspace.status === 'error') return <main className="session-state"><Empty title="Não foi possível carregar os planejamentos" action={<Button variant="primary" onClick={load}>Tentar novamente</Button>}>{workspace.error?.message}</Empty></main>;
+  return <App auth={auth} initialData={workspace.data} />;
 }
 
-function App({ auth }) {
+function App({ auth, initialData }) {
   const { session, can } = auth;
-  const [initial] = useState(() => { try { return restoreState(localStorage.getItem(STORAGE_KEY), initialState); } catch { return { data: initialState(), unavailable: true }; } });
-  const [data, setData] = useState(initial.data);
-  const [storageError, setStorageError] = useState(initial.unavailable || false);
+  const [data, setData] = useState(initialData);
   const [route, setRoute] = useState(readRoute);
   const [modal, setModal] = useState(null);
   const [toast, setToast] = useState('');
-  const [notice, setNotice] = useState(initial.recovered ? 'Os dados locais não puderam ser lidos. Os exemplos foram restaurados.' : '');
+  const [saveError, setSaveError] = useState('');
+  const [readyToSave, setReadyToSave] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(readSidebarPreference);
   useEffect(() => { const changed = () => { setRoute(readRoute()); setModal(null); }; window.addEventListener('hashchange', changed); return () => window.removeEventListener('hashchange', changed); }, []);
-  useEffect(() => { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); setStorageError(false); } catch { setStorageError(true); } }, [data]);
+  useEffect(() => { if (!readyToSave) return setReadyToSave(true); const timer = setTimeout(() => planningClient.save(data).then(() => setSaveError('')).catch(() => setSaveError('Não foi possível salvar as alterações.')), 150); return () => clearTimeout(timer); }, [data]);
   useEffect(() => { if (!toast) return; const timer = setTimeout(() => setToast(''), 4500); return () => clearTimeout(timer); }, [toast]);
   const update = (mutate, message) => { setData((current) => { const next = structuredClone(current); mutate(next); return next; }); if (message) setToast(message); };
-  const changeItem = (planId, itemId, change, message) => update((draft) => { const plan = draft.plans.find((p) => p.id === planId); const index = plan.items.findIndex((i) => i.id === itemId); plan.items[index] = change(plan.items[index]); }, message);
+  const changeItem = (planId, itemId, change, message) => update((draft) => { const plan = draft.plans.find((candidate) => candidate.id === planId); const index = plan.items.findIndex((item) => item.id === itemId); plan.items[index] = change(plan.items[index]); }, message);
   const close = () => setModal(null);
-  const id = route.path.startsWith('/plano/') ? route.path.split('/')[2] : null;
-  const visiblePlans = data.plans.filter((candidate) => can(PERMISSIONS.VIEW_INTERNAL_PLAN, resourceFor(candidate)) || (!candidate.created && can(PERMISSIONS.VIEW_PUBLISHED_PLAN, resourceFor(candidate))));
-  const plan = visiblePlans.find((p) => p.id === id);
+  const toggleSidebar = () => setSidebarCollapsed((current) => { const next = !current; try { localStorage.setItem(SIDEBAR_PREFERENCE_KEY, String(next)); } catch {} return next; });
+  const planId = route.path.startsWith('/plano/') ? route.path.split('/')[2] : null;
+  const visiblePlans = data.plans.filter((plan) => can(PERMISSIONS.VIEW_INTERNAL_PLAN, resourceFor(plan)) || (plan.status === 'published' && can(PERMISSIONS.VIEW_PUBLISHED_PLAN, resourceFor(plan))));
+  const plan = visiblePlans.find((candidate) => candidate.id === planId);
   const actor = session.user?.name || session.user?.email || 'Usuário do sistema';
-  useEffect(() => { document.title = `SUMI · ${plan?.shortName || (route.path === '/modelos' ? 'Modelos' : 'Planejamentos')}`; }, [plan?.shortName, route.path]);
-  function created(newPlan) { update((draft) => draft.plans.push(newPlan), 'Planejamento criado.'); close(); navigate(planUrl(newPlan.id)); }
-  function savedItem(nextItem, planId) {
-    update((draft) => { const p = draft.plans.find((p) => p.id === planId); p.axisColors ||= {}; p.axisColors[nextItem.axis] = nextItem.axisColor; p.items = p.items.map((current) => current.axis === nextItem.axis ? { ...current, axisColor: nextItem.axisColor } : current); const index = p.items.findIndex((i) => i.id === nextItem.id); if (index < 0) p.items.push(nextItem); else p.items[index] = nextItem; }, 'Informações salvas.');
-    close(); navigate(planUrl(planId, nextItem.id));
+  const roles = session.roles?.map((role) => role.name).join(' · ') || 'Consulta pública';
+  useEffect(() => { const label = plan?.shortName || ({ '/inicio': 'Início', '/planejamentos': 'Planejamentos', '/pendencias': 'Minhas pendências', '/validacoes': 'Validações', '/modelos': 'Modelos' })[route.path] || 'SUMI'; document.title = `SUMI · ${label}`; }, [plan?.shortName, route.path]);
+
+  function saveItem(nextItem, id) {
+    update((draft) => { const currentPlan = draft.plans.find((candidate) => candidate.id === id); const index = currentPlan.items.findIndex((item) => item.id === nextItem.id); if (index < 0) currentPlan.items.push(nextItem); else currentPlan.items[index] = { ...nextItem, reviewStatus: ['submitted', 'validated'].includes(currentPlan.items[index].reviewStatus) ? 'draft' : nextItem.reviewStatus }; }, 'Informações salvas.');
+    close(); navigate(planUrl(id, nextItem.id));
   }
-  return <div className="app-shell">
-    <a href="#main-content" className="skip-link" onClick={(e) => { e.preventDefault(); document.getElementById('main-content').focus(); }}>Pular para o conteúdo</a>
-    <aside className="sidebar">
-      <a className="brand" href="#/planejamentos" aria-label="SUMI início"><span className="brand-mark"><i /><i /><i /></span><span>sumi<span className="brand-dot">.</span><small>UFCG</small></span></a>
+
+  function navigationLink(path, icon, text) {
+    return <a className={route.path === path ? 'active' : ''} href={`#${path}`} aria-label={text} title={sidebarCollapsed ? text : undefined}><Icon name={icon} /><span>{text}</span></a>;
+  }
+
+  return <div className={`app-shell ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
+    <a href="#main-content" className="skip-link" onClick={(event) => { event.preventDefault(); document.getElementById('main-content').focus(); }}>Pular para o conteúdo</a>
+    <aside className="sidebar" id="main-sidebar">
+      <a className="brand" href="#/inicio" aria-label="SUMI início"><span className="brand-mark"><i /><i /><i /></span><span>sumi<span className="brand-dot">.</span><small>UFCG</small></span></a>
+      <button type="button" className="sidebar-toggle" aria-label={sidebarCollapsed ? 'Expandir menu lateral' : 'Recolher menu lateral'} aria-expanded={!sidebarCollapsed} aria-controls="main-sidebar" title={sidebarCollapsed ? 'Expandir menu lateral' : 'Recolher menu lateral'} onClick={toggleSidebar}><Icon name="chevron" size={15} /></button>
       <div className="workspace-label">PLANEJAMENTO INSTITUCIONAL</div>
-      <nav aria-label="Navegação principal"><a className={route.path !== '/modelos' ? 'active' : ''} href="#/planejamentos"><Icon name="grid" />Planejamentos</a>{can(PERMISSIONS.MANAGE_MODEL) && <a className={route.path === '/modelos' ? 'active' : ''} href="#/modelos"><Icon name="layers" />Modelos de plano</a>}</nav>
-      <div className="sidebar-bottom"><div className="local-status"><span />Ambiente local</div><button className="reset-button" onClick={() => setModal({ type: 'reset' })}><Icon name="history" size={15} />Restaurar demonstração</button><div className="institution">Universidade Federal<br />de Campina Grande</div></div>
+      <nav aria-label="Navegação principal">
+        {navigationLink('/inicio', 'grid', 'Visão geral')}
+        {navigationLink('/planejamentos', 'book', 'Planejamentos')}
+        {can(PERMISSIONS.VIEW_WORK_QUEUE) && navigationLink('/pendencias', 'list', 'Minhas pendências')}
+        {can(PERMISSIONS.VIEW_REVIEW_QUEUE) && navigationLink('/validacoes', 'check', 'Validações')}
+        {can(PERMISSIONS.MANAGE_MODEL) && navigationLink('/modelos', 'layers', 'Modelos de plano')}
+      </nav>
+      <div className="sidebar-bottom"><div className="institution">Universidade Federal<br />de Campina Grande</div></div>
     </aside>
     <div className="workspace">
-      <header className="topbar"><div className="breadcrumb"><span>SUMI</span><Icon name="chevron" size={13} /><a href="#/planejamentos">Planejamentos</a>{plan && <><Icon name="chevron" size={13} /><strong>{plan.shortName}</strong></>}{route.path === '/modelos' && <><Icon name="chevron" size={13} /><strong>Modelos</strong></>}</div><span className="prototype-tag">PROTÓTIPO LOCAL</span></header>
-      <div className="demo-strip"><Icon name="info" size={14} /><span>Dados demonstrativos · Conteúdo adaptado do PDI e do PLS da UFCG</span><span className="save-status">{storageError ? 'Somente nesta sessão' : 'Alterações salvas neste navegador'}</span></div>
-      {storageError && <div role="alert" className="warning-strip">O navegador não permitiu salvar os dados. As alterações serão perdidas ao fechar ou recarregar.</div>}
-      {notice && <div role="status" className="warning-strip">{notice}<button type="button" onClick={() => setNotice('')}>Dispensar</button></div>}
+      <header className="topbar"><div className="breadcrumb"><a href="#/inicio">SUMI</a>{plan && <><Icon name="chevron" size={13} /><a href="#/planejamentos">Planejamentos</a><Icon name="chevron" size={13} /><strong>{plan.shortName}</strong></>}</div><div className="account-summary"><span className="account-avatar"><Icon name="user" size={16} /></span><span><strong>{session.user?.name || 'Comunidade UFCG'}</strong><small>{roles}</small></span></div></header>
+      {saveError && <div role="alert" className="warning-strip">{saveError}</div>}
       <main id="main-content" tabIndex={-1}>
-        {route.path === '/planejamentos' ? <PlanList data={{ ...data, plans: visiblePlans }} can={can} onCreate={() => setModal({ type: 'plan' })} /> : route.path === '/modelos' && can(PERMISSIONS.MANAGE_MODEL) ? <Models templates={data.templates} onEdit={(template) => setModal({ type: 'template', template })} onUse={(template) => setModal({ type: 'plan', templateId: template.id })} /> : plan ? <PlanPage key={plan.id} plan={plan} actor={actor} can={can} route={route} onModal={setModal} changeItem={changeItem} /> : <Empty title="Planejamento não encontrado" action={<Button onClick={() => navigate('/planejamentos')}>Voltar aos planejamentos</Button>}>Escolha um planejamento disponível para continuar.</Empty>}
+        {route.path === '/inicio' ? <Home data={{ ...data, plans: visiblePlans }} session={session} can={can} />
+          : route.path === '/planejamentos' ? <PlanList data={{ ...data, plans: visiblePlans }} can={can} onCreate={() => setModal({ type: 'plan' })} />
+            : route.path === '/pendencias' && can(PERMISSIONS.VIEW_WORK_QUEUE) ? <WorkQueue plans={visiblePlans} can={can} />
+              : route.path === '/validacoes' && can(PERMISSIONS.VIEW_REVIEW_QUEUE) ? <ReviewQueue plans={visiblePlans} can={can} />
+                : route.path === '/modelos' && can(PERMISSIONS.MANAGE_MODEL) ? <Models templates={data.templates} onEdit={(template) => setModal({ type: 'template', template })} onUse={(template) => setModal({ type: 'plan', templateId: template.id })} />
+                  : plan ? <PlanPage key={plan.id} plan={plan} actor={actor} can={can} route={route} onModal={setModal} changeItem={changeItem} />
+                    : <Empty title="Página não encontrada" action={<Button onClick={() => navigate('/inicio')}>Voltar ao início</Button>}>O conteúdo solicitado não está disponível para sua sessão.</Empty>}
       </main>
     </div>
     {toast && <div role="status" className="toast"><Icon name="check" size={17} />{toast}</div>}
-    {modal?.type === 'plan' && <PlanForm templates={data.templates} initialTemplate={modal.templateId} onClose={close} onSave={created} />}
-    {modal?.type === 'template' && <TemplateForm template={modal.template} onClose={close} onSave={(template) => { update((draft) => { draft.templates = draft.templates.map((t) => t.id === template.id ? template : t); }, 'Modelo salvo para novos planejamentos.'); close(); }} />}
-    {modal?.type === 'item' && <ItemForm plan={plan} item={modal.item} onClose={close} onSave={(item) => savedItem(item, plan.id)} />}
-    {modal?.type === 'action' && <ActionForm plan={plan} item={modal.item} onClose={close} onSave={(action) => { changeItem(plan.id, modal.item.id, (item) => ({ ...item, actions: [...item.actions, action], history: [...item.history, historyEntry(`Ação adicionada: ${action.title}.`, actor)] }), 'Ação adicionada.'); close(); }} />}
-    {modal?.type === 'risk' && <RiskForm item={modal.item} action={modal.action} risk={modal.risk} onClose={close} onSave={(risk) => { changeItem(plan.id, modal.item.id, (item) => ({ ...item, risks: modal.risk ? item.risks.map((current) => current.id === risk.id ? risk : current) : [...(item.risks || []), risk], history: [...item.history, historyEntry(`${modal.risk ? 'Risco atualizado' : 'Risco adicionado'}: ${risk.title}.`, actor)] }), modal.risk ? 'Risco atualizado.' : 'Risco adicionado.'); close(); }} />}
-    {modal?.type === 'measurement' && <MeasurementForm plan={plan} item={modal.item} year={modal.year} onClose={close} onSave={(entry) => { changeItem(plan.id, modal.item.id, (item) => ({ ...item, measurements: [...item.measurements, entry], history: [...item.history, historyEntry(`Resultado de ${entry.year}: ${formatNumber(entry.value)} ${item.metric.unit}. ${entry.note}`, actor)] }), 'Resultado registrado.'); close(); navigate(planUrl(plan.id, modal.item.id, 'indicadores', entry.year)); }} />}
-    {modal?.type === 'targets' && <TargetsForm plan={plan} item={modal.item} onClose={close} onSave={(targets) => { changeItem(plan.id, modal.item.id, (item) => ({ ...item, metric: { ...item.metric, targets }, history: [...item.history, historyEntry(`Metas anuais atualizadas. Anterior: ${Object.entries(item.metric.targets).map(([y, v]) => `${y}: ${formatNumber(v)}`).join('; ')}. Nova: ${Object.entries(targets).map(([y, v]) => `${y}: ${formatNumber(v)}`).join('; ')}.`, actor)] }), 'Metas salvas.'); close(); }} />}
-    {modal?.type === 'reset' && <Modal title="Restaurar demonstração?" onClose={close}><div className="form-body"><p>Os planejamentos e modelos voltarão aos exemplos iniciais. Registros, alterações e planos criados neste navegador serão removidos.</p><p className="hint">Nenhum arquivo ou repositório será alterado.</p></div><div className="form-end"><Button onClick={close}>Cancelar</Button><Button variant="danger-primary" onClick={() => { setData(initialState()); close(); navigate('/planejamentos'); setToast('Exemplos restaurados.'); }}>Restaurar exemplos</Button></div></Modal>}
+    {modal?.type === 'plan' && <PlanForm templates={data.templates} initialTemplate={modal.templateId} onClose={close} onSave={(newPlan) => { update((draft) => draft.plans.push(newPlan), 'Planejamento criado.'); close(); navigate(planUrl(newPlan.id)); }} />}
+    {modal?.type === 'template' && <TemplateForm template={modal.template} onClose={close} onSave={(template) => { update((draft) => { draft.templates = draft.templates.map((current) => current.id === template.id ? template : current); }, 'Modelo salvo.'); close(); }} />}
+    {modal?.type === 'structure' && <StructureForm plan={plan} onClose={close} onSave={(structure) => { update((draft) => { const current = draft.plans.find((candidate) => candidate.id === plan.id); current.axes = structure.axes; current.objectives = structure.objectives; }, 'Estrutura atualizada.'); close(); }} />}
+    {modal?.type === 'item' && plan && <ItemForm plan={plan} item={modal.item} actor={actor} onClose={close} onSave={(item) => saveItem(item, plan.id)} />}
+    {modal?.type === 'action' && plan && <ActionForm plan={plan} item={modal.item} onClose={close} onSave={(action) => { changeItem(plan.id, modal.item.id, (item) => ({ ...item, reviewStatus: ['submitted', 'validated'].includes(item.reviewStatus) ? 'draft' : item.reviewStatus, actions: [...item.actions, action], history: [...item.history, historyEntry(`Ação adicionada: ${action.title}.`, actor)] }), 'Ação adicionada.'); close(); }} />}
+    {modal?.type === 'risk' && plan && <RiskForm item={modal.item} action={modal.action} risk={modal.risk} onClose={close} onSave={(nextRisk) => { changeItem(plan.id, modal.item.id, (item) => ({ ...item, reviewStatus: ['submitted', 'validated'].includes(item.reviewStatus) ? 'draft' : item.reviewStatus, risks: modal.risk ? item.risks.map((current) => current.id === nextRisk.id ? nextRisk : current) : [...(item.risks || []), nextRisk], history: [...item.history, historyEntry(`${modal.risk ? 'Risco atualizado' : 'Risco adicionado'}: ${nextRisk.title}.`, actor)] }), modal.risk ? 'Risco atualizado.' : 'Risco adicionado.'); close(); }} />}
+    {modal?.type === 'measurement' && plan && <MeasurementForm plan={plan} item={modal.item} year={modal.period} onClose={close} onSave={(entry) => { changeItem(plan.id, modal.item.id, (item) => ({ ...item, reviewStatus: 'draft', measurements: [...item.measurements, entry], history: [...item.history, historyEntry(`Resultado registrado para ${periodLabel(plan, item, entry.year)}: ${formatMetricValue(item, entry.value)}${item.metric.unit ? ` ${item.metric.unit}` : ''}. ${entry.note}`, actor)] }), 'Resultado registrado.'); close(); navigate(planUrl(plan.id, modal.item.id, 'indicadores', entry.year)); }} />}
+    {modal?.type === 'targets' && plan && <TargetsForm plan={plan} item={modal.item} onClose={close} onSave={(targets) => { changeItem(plan.id, modal.item.id, (item) => ({ ...item, reviewStatus: 'draft', metric: { ...item.metric, targets }, history: [...item.history, historyEntry('Metas atualizadas.', actor)] }), 'Metas salvas.'); close(); }} />}
+    {modal?.type === 'review' && plan && <ReviewForm item={modal.item} decision={modal.decision} onClose={close} onSave={({ status, note }) => { changeItem(plan.id, modal.item.id, (item) => ({ ...item, reviewStatus: status, reviewNote: note, history: [...item.history, historyEntry(status === 'validated' ? 'Informações validadas.' : `Correção solicitada: ${note}`, actor)] }), status === 'validated' ? 'Informações validadas.' : 'Correção solicitada.'); close(); }} />}
   </div>;
+}
+
+function Home({ data, session, can }) {
+  const items = data.plans.flatMap((plan) => plan.items.map((item) => ({ plan, item })));
+  const internalItems = items.filter(({ plan, item }) => can(PERMISSIONS.VIEW_INTERNAL_PLAN, resourceFor(plan, item)));
+  const overdue = internalItems.reduce((total, { item }) => total + item.actions.flatMap((action) => action.tasks).filter((task) => taskOverdue(task)).length, 0);
+  const awaiting = items.filter(({ plan, item }) => item.reviewStatus === 'submitted' && can(PERMISSIONS.REVIEW_ITEM, resourceFor(plan, item))).length;
+  return <div className="page"><div className="page-heading"><div><p className="eyebrow">VISÃO GERAL</p><h1>{session.authenticated ? `Olá, ${session.user?.name?.split(' ')[0] || 'usuário'}` : 'Planejamento institucional'}</h1><p>{session.authenticated ? 'Acompanhe suas responsabilidades e os resultados dos planos institucionais.' : 'Consulte os planos e resultados publicados pela UFCG.'}</p></div></div>
+    <div className="overview-grid"><article><span>Planejamentos disponíveis</span><strong>{data.plans.length}</strong><a href="#/planejamentos">Consultar planos <Icon name="arrow" size={14} /></a></article><article><span>Itens acompanhados</span><strong>{items.length}</strong><small>Iniciativas e metas</small></article>{session.authenticated && internalItems.length > 0 ? <article><span>Etapas atrasadas</span><strong>{overdue}</strong><small>Nos seus escopos de acesso</small></article> : <article><span>Planos publicados</span><strong>{data.plans.filter((plan) => plan.status === 'published').length}</strong><small>Consulta disponível</small></article>}{can(PERMISSIONS.VIEW_REVIEW_QUEUE) && <article><span>Aguardando validação</span><strong>{awaiting}</strong><a href="#/validacoes">Abrir fila <Icon name="arrow" size={14} /></a></article>}</div>
+    <section className="home-section"><div className="section-heading"><div><h2>Planejamentos em acompanhamento</h2><p className="hint">Visão consolidada dos ciclos institucionais.</p></div><a className="text-button" href="#/planejamentos">Ver todos</a></div><div className="compact-plan-list">{data.plans.map((plan) => <a key={plan.id} href={`#${planUrl(plan.id)}`}><span className={`plan-icon ${plan.type.toLowerCase()}`}><Icon name={plan.type === 'PDI' ? 'book' : 'leaf'} size={18} /></span><span><strong>{plan.shortName}</strong><small>{plan.name}</small></span><span>{executionProgress({ actions: plan.items.flatMap((item) => item.actions) }).percent}%</span><Icon name="chevron" size={14} /></a>)}</div></section>
+  </div>;
+}
+
+function WorkQueue({ plans, can }) {
+  const rows = plans.flatMap((plan) => plan.items.filter((item) => can(PERMISSIONS.UPDATE_STAGE, resourceFor(plan, item)) || can(PERMISSIONS.RECORD_RESULT, resourceFor(plan, item))).map((item) => ({ plan, item })));
+  return <QueuePage eyebrow="EXECUÇÃO" title="Minhas pendências" description="Itens sob sua responsabilidade de atualização." rows={rows} empty="Nenhuma pendência atribuída à sua sessão." />;
+}
+
+function ReviewQueue({ plans, can }) {
+  const rows = plans.flatMap((plan) => plan.items.filter((item) => item.reviewStatus === 'submitted' && can(PERMISSIONS.REVIEW_ITEM, resourceFor(plan, item))).map((item) => ({ plan, item })));
+  return <QueuePage eyebrow="VALIDAÇÃO" title="Validações" description="Informações enviadas para sua análise." rows={rows} empty="Não há informações aguardando validação." />;
+}
+
+function QueuePage({ eyebrow, title, description, rows, empty }) {
+  return <div className="page"><div className="page-heading"><div><p className="eyebrow">{eyebrow}</p><h1>{title}</h1><p>{description}</p></div></div>{rows.length ? <div className="queue-list">{rows.map(({ plan, item }) => <a key={`${plan.id}-${item.id}`} href={`#${planUrl(plan.id, item.id)}`}><span><Badge tone={plan.type === 'PDI' ? 'blue' : 'green'}>{plan.shortName}</Badge><strong>{item.code} · {item.title}</strong><small>{item.owner}</small></span><span><Badge tone={statusTone(reviewStatusLabel(item.reviewStatus))}>{reviewStatusLabel(item.reviewStatus)}</Badge><Icon name="chevron" size={14} /></span></a>)}</div> : <Empty title={empty}>Quando houver novos itens, eles aparecerão aqui.</Empty>}</div>;
 }
 
 function PlanList({ data, can, onCreate }) {
   const [filter, setFilter] = useState('Todos');
   const [search, setSearch] = useState('');
-  const filtered = data.plans.filter((p) => (filter === 'Todos' || p.type === filter) && normalize(`${p.shortName} ${p.name}`).includes(normalize(search)));
-  const items = data.plans.flatMap((p) => p.items);
-  return <div className="page">
-    <div className="page-heading"><div><p className="eyebrow">VISÃO GERAL</p><h1>Planejamentos</h1><p>Acompanhe os planos, as ações e os resultados da instituição.</p></div>{can(PERMISSIONS.MANAGE_PLAN) && <Button icon="plus" variant="primary" onClick={onCreate}>Novo planejamento</Button>}</div>
-    <div className="summary-row"><div><strong>{data.plans.length.toString().padStart(2, '0')}</strong><span>planejamentos</span></div><div><strong>{items.length.toString().padStart(2, '0')}</strong><span>itens acompanhados</span></div><div><strong>{items.reduce((sum, i) => sum + i.actions.length, 0).toString().padStart(2, '0')}</strong><span>ações no recorte</span></div><div className="summary-note"><Icon name="calendar" /><span>Ciclos institucionais<br /><b>{data.plans.length ? `${Math.min(...data.plans.map((p) => p.start))} — ${Math.max(...data.plans.map((p) => p.end))}` : '—'}</b></span></div></div>
-    <div className="list-toolbar"><div className="segmented" aria-label="Filtrar tipo de planejamento">{['Todos', 'PDI', 'PLS'].map((f) => <button key={f} aria-pressed={filter === f} className={filter === f ? 'selected' : ''} onClick={() => setFilter(f)}>{f}</button>)}</div><label className="search"><Icon name="search" size={17} /><input aria-label="Buscar planejamento" placeholder="Buscar planejamento…" value={search} onChange={(e) => setSearch(e.target.value)} /></label></div>
-    {filtered.length ? <div className="plan-grid">{filtered.map((p) => {
-      const progress = p.items.length ? Math.round(p.items.reduce((sum, item) => sum + executionProgress(item).percent, 0) / p.items.length) : 0;
-      return <article className={`plan-card ${p.type.toLowerCase()}`} key={p.id}>
-        <div className="plan-card-header">
-          <div className="plan-identity"><span className="plan-icon"><Icon name={p.type === 'PDI' ? 'book' : 'leaf'} size={22} /></span><div className="plan-card-title"><h2>{p.shortName}</h2><span>{p.start}–{p.end}</span></div></div>
-          <span className="plan-state">{p.created ? 'Rascunho local' : 'Em acompanhamento'}</span>
-        </div>
-        <p className="plan-full-name">{p.name}</p>
-        <div className="plan-card-progress"><Progress percent={progress} label="ações" /></div>
-        <div className="plan-card-footer">
-          <div className="card-facts"><span>{p.items.length} {p.template.labels.item.toLowerCase()}{p.items.length !== 1 ? 's' : ''}</span><span>{p.items.reduce((s, i) => s + i.actions.length, 0)} ações</span></div>
-          <a className="open-plan" href={`#${planUrl(p.id)}`} aria-label={`Abrir ${p.shortName} ${p.start}–${p.end}`}>Abrir planejamento<Icon name="arrow" size={15} /></a>
-        </div>
-      </article>;
-    })}</div> : <Empty title="Nenhum planejamento encontrado" action={<Button onClick={() => { setFilter('Todos'); setSearch(''); }}>Limpar filtros</Button>}>Tente outro nome ou tipo de planejamento.</Empty>}
-    <div className="bottom-note"><Icon name="layers" size={17} /><p>Uma estrutura para cada demanda.<br /><span>Modelos prontos para começar, campos ajustáveis para o seu planejamento.</span></p>{can(PERMISSIONS.MANAGE_MODEL) && <a href="#/modelos">Conhecer os modelos <Icon name="arrow" size={15} /></a>}</div>
+  const filtered = data.plans.filter((plan) => (filter === 'Todos' || plan.type === filter) && normalize(`${plan.shortName} ${plan.name}`).includes(normalize(search)));
+  return <div className="page"><div className="page-heading"><div><p className="eyebrow">PLANEJAMENTOS</p><h1>Planos institucionais</h1><p>Acompanhe estrutura, execução e resultados em um único lugar.</p></div>{can(PERMISSIONS.MANAGE_PLAN) && <Button icon="plus" variant="primary" onClick={onCreate}>Novo planejamento</Button>}</div>
+    <div className="list-toolbar"><div className="segmented" aria-label="Filtrar tipo de planejamento">{['Todos', 'PDI', 'PLS'].map((value) => <button key={value} aria-pressed={filter === value} className={filter === value ? 'selected' : ''} onClick={() => setFilter(value)}>{value}</button>)}</div><label className="search"><Icon name="search" size={17} /><input aria-label="Buscar planejamento" placeholder="Buscar planejamento…" value={search} onChange={(event) => setSearch(event.target.value)} /></label></div>
+    {filtered.length ? <div className="plan-grid">{filtered.map((plan) => { const progress = executionProgress({ actions: plan.items.flatMap((item) => item.actions) }); return <article className={`plan-card ${plan.type.toLowerCase()}`} key={plan.id}><div className="plan-card-header"><div className="plan-identity"><span className="plan-icon"><Icon name={plan.type === 'PDI' ? 'book' : 'leaf'} size={22} /></span><div className="plan-card-title"><h2>{plan.shortName}</h2><span>{plan.start}–{plan.end}</span></div></div><Badge tone={plan.status === 'published' ? 'green' : 'neutral'}>{plan.status === 'published' ? 'Publicado' : 'Rascunho'}</Badge></div><p className="plan-full-name">{plan.name}</p><div className="plan-card-progress"><Progress {...progress} /></div><div className="plan-card-footer"><div className="card-facts"><span>{plan.axes.length} eixos</span><span>{plan.items.length} {plan.template.labels.item.toLowerCase()}{plan.items.length !== 1 ? 's' : ''}</span></div><a className="open-plan" href={`#${planUrl(plan.id)}`} aria-label={`Abrir ${plan.shortName} ${plan.start}–${plan.end}`}>Abrir planejamento<Icon name="arrow" size={15} /></a></div></article>; })}</div> : <Empty title="Nenhum planejamento encontrado" action={<Button onClick={() => { setFilter('Todos'); setSearch(''); }}>Limpar filtros</Button>}>Tente outro nome ou tipo.</Empty>}
   </div>;
 }
 
 function Models({ templates, onEdit, onUse }) {
-  return <div className="page"><div className="page-heading"><div><p className="eyebrow">ESTRUTURA DO PLANEJAMENTO</p><h1>Modelos de plano</h1><p>Comece com uma estrutura pronta. Adapte os nomes e os campos quando precisar.</p></div></div><div className="models-grid">{templates.map((template) => <article className="model-card" key={template.id}><div className="section-heading"><Badge tone={template.type === 'PDI' ? 'blue' : 'green'}>{template.type}</Badge><span className="muted text-sm">Versão {template.version}</span></div><h2>{template.name}</h2><p>{template.description}</p><div className="model-tree">{[template.labels.axis, template.labels.objective, template.labels.item, 'Ação', 'etapa'].map((label, i) => <div key={i} style={{ marginLeft: i * 20 }}><Icon name={i === 4 ? 'check' : 'layers'} size={14} />{label}{i === 2 && <span>Indicador + metas</span>}</div>)}</div><div className="model-fields"><small>CAMPOS ADICIONAIS</small>{template.fields.length ? <div className="flex flex-wrap gap-2">{template.fields.map((f) => <Badge key={f.id}>{f.label}</Badge>)}</div> : <p>Nenhum campo adicional</p>}</div><div className="model-buttons"><Button icon="edit" onClick={() => onEdit(template)}>Personalizar {template.type}</Button><Button variant="primary" onClick={() => onUse(template)}>Usar modelo {template.type}<Icon name="arrow" size={15} /></Button></div></article>)}</div><p className="hint mt-6">Cada planejamento mantém a versão do modelo usada na sua criação. Alterar um modelo não modifica os planos existentes.</p></div>;
+  return <div className="page"><div className="page-heading"><div><p className="eyebrow">CONFIGURAÇÃO</p><h1>Modelos de plano</h1><p>Defina a terminologia e os campos adicionais dos novos planejamentos.</p></div></div><div className="models-grid">{templates.map((template) => <article className="model-card" key={template.id}><div className="section-heading"><Badge tone={template.type === 'PDI' ? 'blue' : 'green'}>{template.type}</Badge><span className="muted text-sm">Versão {template.version}</span></div><h2>{template.name}</h2><p>{template.description}</p><div className="model-tree">{[template.labels.axis, template.labels.objective, template.labels.item, 'Ação', 'Etapa'].map((label, index) => <div key={label} style={{ marginLeft: index * 20 }}><Icon name={index === 4 ? 'check' : 'layers'} size={14} />{label}{index === 2 && <span>Indicador + metas</span>}</div>)}</div><div className="model-buttons"><Button icon="edit" onClick={() => onEdit(template)}>Editar modelo</Button><Button variant="primary" onClick={() => onUse(template)}>Criar plano<Icon name="arrow" size={15} /></Button></div></article>)}</div></div>;
 }
 
 function PlanPage({ plan, actor, can, route, onModal, changeItem }) {
@@ -118,63 +154,59 @@ function PlanPage({ plan, actor, can, route, onModal, changeItem }) {
   const [owner, setOwner] = useState('');
   const [status, setStatus] = useState('');
   const [collapsed, setCollapsed] = useState([]);
-  const requestedYear = Number(route.query.get('year'));
-  const year = years(plan).includes(requestedYear) ? requestedYear : Math.max(plan.start, Math.min(2026, plan.end));
-  const filtered = plan.items.filter((i) => normalize(`${i.code} ${i.title} ${i.objective} ${i.axis}`).includes(normalize(search)) && (!owner || i.owner === owner) && (!status || executionStatus(i) === status));
-  const item = filtered.find((i) => i.id === route.query.get('item')) || filtered[0];
+  const filtered = plan.items.filter((item) => { const axis = axisFor(plan, item); const objective = objectiveFor(plan, item); return normalize(`${item.code} ${item.title} ${axisLabel(axis)} ${objective?.title}`).includes(normalize(search)) && (!owner || item.owner === owner) && (!status || executionStatus(item) === status); });
+  const item = filtered.find((candidate) => candidate.id === route.query.get('item')) || filtered[0];
+  const selectedPeriod = Number(route.query.get('period'));
+  const period = item && periods(plan, item).includes(selectedPeriod) ? selectedPeriod : currentPeriod(plan, item);
   const resource = resourceFor(plan, item);
-  const tabOptions = [['acoes', 'list', 'Ações e etapas'], ['indicadores', 'chart', 'Indicador e metas'], ['riscos', 'info', `Riscos${item?.risks?.length ? ` (${item.risks.length})` : ''}`], ['historico', 'history', 'Histórico']].filter(([value]) => value !== 'riscos' || can(PERMISSIONS.VIEW_RISK, resource)).filter(([value]) => value !== 'historico' || can(PERMISSIONS.VIEW_HISTORY, resource));
-  const tabIds = tabOptions.map(([value]) => value);
-  const tab = tabIds.includes(route.query.get('tab')) ? route.query.get('tab') : 'acoes';
-  const setYear = (nextYear) => navigate(planUrl(plan.id, item.id, tab, nextYear));
-  const toggleGroup = (key) => setCollapsed((current) => current.includes(key) ? current.filter((k) => k !== key) : [...current, key]);
+  const tabs = [['acoes', 'list', 'Ações e etapas'], ['indicadores', 'chart', 'Indicador e metas'], ['riscos', 'info', `Riscos${item?.risks?.length ? ` (${item.risks.length})` : ''}`], ['historico', 'history', 'Histórico']].filter(([value]) => value !== 'riscos' || can(PERMISSIONS.VIEW_RISK, resource)).filter(([value]) => value !== 'historico' || can(PERMISSIONS.VIEW_HISTORY, resource));
+  const tab = tabs.some(([value]) => value === route.query.get('tab')) ? route.query.get('tab') : 'acoes';
+  const setPeriod = (next) => navigate(planUrl(plan.id, item.id, tab, next));
+  const groups = plan.axes.filter((axis) => filtered.some((candidate) => candidate.axisId === axis.id));
+  const toggle = (key) => setCollapsed((current) => current.includes(key) ? current.filter((item) => item !== key) : [...current, key]);
   const resetFilters = () => { setSearch(''); setOwner(''); setStatus(''); };
-  const groups = [...new Set(filtered.map((i) => i.axis))];
-  return <div className="plan-page">
-    <div className="plan-page-heading"><div><a className="back-link" href="#/planejamentos">← Todos os planejamentos</a><div className="title-line"><h1>{plan.shortName} <span>{plan.start}–{plan.end}</span></h1><Badge tone={plan.type === 'PDI' ? 'blue' : 'green'}>Modelo {plan.type}</Badge></div><p>{plan.name}</p></div>{can(PERMISSIONS.MANAGE_PLAN, resourceFor(plan)) && <Button variant="primary" icon="plus" onClick={() => onModal({ type: 'item' })}>Adicionar {plan.template.labels.item.toLowerCase()}</Button>}</div>
-    <div className="explorer">
-      <aside className="plan-tree" aria-label="Estrutura do plano"><div className="tree-heading"><h2>Estrutura do plano</h2><span>{plan.items.length} itens</span></div><label className="search"><Icon name="search" size={15} /><input aria-label="Buscar no plano" placeholder="Buscar no plano…" value={search} onChange={(e) => setSearch(e.target.value)} /></label>
-        <div className="tree-filters"><select aria-label="Filtrar responsável" value={owner} onChange={(e) => setOwner(e.target.value)}><option value="">Todos os responsáveis</option>{[...new Set(plan.items.map((i) => i.owner))].map((o) => <option key={o}>{o}</option>)}</select><select aria-label="Filtrar execução" value={status} onChange={(e) => setStatus(e.target.value)}><option value="">Toda a execução</option>{['Não iniciada', 'Em andamento', 'Concluída'].map((s) => <option key={s}>{s}</option>)}</select></div>
-        {(search || owner || status) && <button className="text-button clear-filter" onClick={resetFilters}>Limpar filtros</button>}
-        <nav aria-label="Itens do planejamento" className="tree-content">{groups.map((axis) => { const axisColor = plan.axisColors?.[axis] || filtered.find((i) => i.axis === axis)?.axisColor || '#2f78a5'; return <div key={axis} className="axis-group" style={{ '--axis-color': axisColor }}><button className="tree-group axis" aria-expanded={!collapsed.includes(axis)} onClick={() => toggleGroup(axis)}><Icon name="chevron" size={13} className={!collapsed.includes(axis) ? 'rotated' : ''} /><span>{axis}</span></button>{!collapsed.includes(axis) && [...new Set(filtered.filter((i) => i.axis === axis).map((i) => i.objective))].map((objective) => { const key = `${axis}|${objective}`; return <div className="objective-group" key={objective}><button className="tree-group objective" aria-expanded={!collapsed.includes(key)} onClick={() => toggleGroup(key)}><Icon name="chevron" size={12} className={!collapsed.includes(key) ? 'rotated' : ''} /><span>{objective}</span></button>{!collapsed.includes(key) && filtered.filter((i) => i.axis === axis && i.objective === objective).map((i) => <a key={i.id} href={`#${planUrl(plan.id, i.id)}`} className={`tree-item ${item?.id === i.id ? 'selected' : ''}`} aria-current={item?.id === i.id ? 'page' : undefined} style={{ '--axis-color': i.axisColor || axisColor }}><span className="node-dot" /><span><small>{plan.template.labels.item} {i.code}</small>{i.title}</span></a>)}</div>; })}</div>; })}{!filtered.length && <p className="tree-no-results">{plan.items.length ? 'Nenhum item corresponde aos filtros.' : 'A estrutura aparecerá após adicionar o primeiro item.'}</p>}</nav>
-        <div className="tree-foot"><Icon name="layers" size={14} />Modelo {plan.type} · versão {plan.template.version}</div>
-      </aside>
-      <section className="detail-pane" aria-label="Detalhe do item">{item ? <>
-        <div className="item-heading" style={{ '--axis-color': item.axisColor || plan.axisColors?.[item.axis] || '#2f78a5' }}><div className="section-heading"><div className="flex items-center gap-3"><span className="item-code">{plan.template.labels.item.toUpperCase()} {item.code}</span><Badge tone={statusTone(executionStatus(item))}>{executionStatus(item)}</Badge></div>{can(PERMISSIONS.EDIT_ITEM, resource) && <Button icon="edit" variant="ghost" onClick={() => onModal({ type: 'item', item })}>Editar informações</Button>}</div><h2>{item.title}</h2><p>{item.description}</p><div className="item-meta"><span><Icon name="user" size={15} /><strong>{item.owner}</strong></span>{item.partners && <span>Parceiros: {item.partners}</span>}</div>{Object.entries(item.extras).some(([, v]) => v !== '') && <div className="extra-values">{plan.template.fields.filter((f) => item.extras[f.id] !== '' && item.extras[f.id] != null).map((f) => <span key={f.id}><b>{f.label}:</b> {f.type === 'date' ? formatDate(item.extras[f.id]) : item.extras[f.id]}</span>)}</div>}
-          {item.linkedPlan && <a className="related-plan" href={`#${planUrl(item.linkedPlan)}`}><Icon name="link" size={16} /><span>Planejamento relacionado <strong>PLS 2025–2030</strong></span><Icon name="arrow" size={17} /></a>}
-        </div>
-        <div className="detail-tabs" role="tablist" aria-label="Seções do item">{tabOptions.map(([value, icon, label]) => <button id={`tab-${value}`} role="tab" key={value} tabIndex={tab === value ? 0 : -1} aria-selected={tab === value} aria-controls="item-panel" className={tab === value ? 'active' : ''} onKeyDown={(e) => { const keyboardIndex = tabIds.indexOf(value); const next = e.key === 'ArrowRight' ? (keyboardIndex + 1) % tabIds.length : e.key === 'ArrowLeft' ? (keyboardIndex + tabIds.length - 1) % tabIds.length : e.key === 'Home' ? 0 : e.key === 'End' ? tabIds.length - 1 : null; if (next !== null) { e.preventDefault(); document.getElementById(`tab-${tabIds[next]}`).focus(); navigate(planUrl(plan.id, item.id, tabIds[next], year)); } }} onClick={() => navigate(planUrl(plan.id, item.id, value, year))}><Icon name={icon} size={16} />{label}</button>)}</div>
-        <div id="item-panel" role="tabpanel" aria-labelledby={`tab-${tab}`} className="tab-content">
-          {tab === 'acoes' && <Actions key={item.id} item={item} actor={actor} can={can} plan={plan} onAdd={() => onModal({ type: 'action', item })} onAddRisk={(action) => onModal({ type: 'risk', item, action })} onChange={(change, message) => changeItem(plan.id, item.id, change, message)} />}
-          {tab === 'indicadores' && <Indicators item={item} can={can} plan={plan} year={year} setYear={setYear} onRecord={() => onModal({ type: 'measurement', item, year })} onTargets={() => onModal({ type: 'targets', item })} />}
-          {tab === 'riscos' && <Risks item={item} canEdit={can(PERMISSIONS.MANAGE_RISK, resource)} onEdit={(risk) => onModal({ type: 'risk', item, action: item.actions.find((action) => action.id === risk.actionId), risk })} />}
-          {tab === 'historico' && <History key={item.id} item={item} canComment={can(PERMISSIONS.COMMENT_HISTORY, resource)} onComment={(text) => changeItem(plan.id, item.id, (current) => ({ ...current, history: [...current.history, historyEntry(text, actor)] }), 'Observação adicionada.')} />}
-        </div><footer className="source-note"><Icon name="info" size={13} />{item.source}</footer>
-</> : <Empty title={plan.items.length ? 'Nenhum item encontrado' : `Adicione o primeiro item do ${plan.shortName}`} action={plan.items.length ? <Button onClick={resetFilters}>Limpar filtros do plano</Button> : can(PERMISSIONS.MANAGE_PLAN, resourceFor(plan)) ? <Button variant="primary" icon="plus" onClick={() => onModal({ type: 'item' })}>Criar primeiro item</Button> : null}>{plan.items.length ? 'Ajuste a busca ou os filtros para continuar.' : can(PERMISSIONS.MANAGE_PLAN, resourceFor(plan)) ? `O modelo já está pronto. Cadastre o primeiro item para começar o acompanhamento.` : 'Não há itens disponíveis.'}</Empty>}</section>
-    </div>
-  </div>;
+  return <div className="plan-page"><div className="plan-page-heading"><div><a className="back-link" href="#/planejamentos">← Todos os planejamentos</a><div className="title-line"><h1>{plan.shortName} <span>{plan.start}–{plan.end}</span></h1><Badge tone={plan.status === 'published' ? 'green' : 'neutral'}>{plan.status === 'published' ? 'Publicado' : 'Rascunho'}</Badge></div><p>{plan.name}</p></div>{can(PERMISSIONS.MANAGE_PLAN, resourceFor(plan)) && <div className="heading-actions"><Button icon="layers" onClick={() => onModal({ type: 'structure' })}>Estrutura</Button>{plan.objectives.length > 0 && <Button variant="primary" icon="plus" onClick={() => onModal({ type: 'item' })}>Adicionar {plan.template.labels.item.toLowerCase()}</Button>}</div>}</div>
+    <div className="explorer"><aside className="plan-tree" aria-label="Estrutura do plano"><div className="tree-heading"><h2>Estrutura do plano</h2><span>{plan.items.length} itens</span></div><label className="search"><Icon name="search" size={15} /><input aria-label="Buscar no plano" placeholder="Buscar no plano…" value={search} onChange={(event) => setSearch(event.target.value)} /></label><div className="tree-filters"><select aria-label="Filtrar responsável" value={owner} onChange={(event) => setOwner(event.target.value)}><option value="">Todos os responsáveis</option>{[...new Set(plan.items.map((candidate) => candidate.owner))].map((value) => <option key={value}>{value}</option>)}</select><select aria-label="Filtrar situação" value={status} onChange={(event) => setStatus(event.target.value)}><option value="">Todas as situações</option>{['Não iniciada', 'Em andamento', 'Concluída', 'Cancelada'].map((value) => <option key={value}>{value}</option>)}</select></div>
+      <nav aria-label="Itens do planejamento" className="tree-content">{groups.map((axis) => <div key={axis.id} className="axis-group" style={{ '--axis-color': axis.color }}><button className="tree-group axis" aria-expanded={!collapsed.includes(axis.id)} onClick={() => toggle(axis.id)}><Icon name="chevron" size={13} className={!collapsed.includes(axis.id) ? 'rotated' : ''} /><span>{axisLabel(axis)}</span></button>{!collapsed.includes(axis.id) && plan.objectives.filter((objective) => objective.axisId === axis.id && filtered.some((candidate) => candidate.objectiveId === objective.id)).map((objective) => <div className="objective-group" key={objective.id}><button className="tree-group objective" aria-expanded={!collapsed.includes(objective.id)} onClick={() => toggle(objective.id)}><Icon name="chevron" size={12} className={!collapsed.includes(objective.id) ? 'rotated' : ''} /><span>{objective.code} · {objective.title}</span></button>{!collapsed.includes(objective.id) && filtered.filter((candidate) => candidate.objectiveId === objective.id).map((candidate) => <a key={candidate.id} href={`#${planUrl(plan.id, candidate.id)}`} className={`tree-item ${item?.id === candidate.id ? 'selected' : ''}`} aria-current={item?.id === candidate.id ? 'page' : undefined} style={{ '--axis-color': axis.color }}><span className="node-dot" /><span><small>{plan.template.labels.item} {candidate.code}</small>{candidate.title}</span></a>)}</div>)}</div>)}{!filtered.length && <p className="tree-no-results">Nenhum item corresponde aos filtros.</p>}</nav></aside>
+      <section className="detail" aria-label="Detalhe do item">{item ? <ItemDetail plan={plan} item={item} actor={actor} can={can} tab={tab} tabs={tabs} period={period} setPeriod={setPeriod} onModal={onModal} changeItem={changeItem} /> : <Empty title={plan.items.length ? 'Nenhum item encontrado' : 'Estrutura pronta para receber conteúdo'} action={plan.items.length ? <Button onClick={resetFilters}>Limpar filtros</Button> : can(PERMISSIONS.MANAGE_PLAN, resourceFor(plan)) ? <Button onClick={() => onModal({ type: 'structure' })}>Configurar estrutura</Button> : null}>{plan.items.length ? 'Ajuste os filtros para continuar.' : 'Cadastre os eixos e objetivos antes de incluir o primeiro item.'}</Empty>}</section></div></div>;
 }
 
-function StageRow({ task, action, actor, canUpdateStage, onChange }) {
+function ItemDetail({ plan, item, actor, can, tab, tabs, period, setPeriod, onModal, changeItem }) {
+  const axis = axisFor(plan, item);
+  const objective = objectiveFor(plan, item);
+  const resource = resourceFor(plan, item);
+  const canSeeWorkflow = can(PERMISSIONS.SUBMIT_ITEM, resource) || can(PERMISSIONS.REVIEW_ITEM, resource) || can(PERMISSIONS.VIEW_HISTORY, resource);
+  const presentExtra = (field, value) => field.type === 'date' ? formatDate(value) : field.type === 'number' ? formatNumber(value) : value;
+  const extraFields = plan.template.fields.filter((field) => item.extras?.[field.id] !== '' && item.extras?.[field.id] != null);
+  const submit = () => changeItem(plan.id, item.id, (current) => ({ ...current, reviewStatus: 'submitted', reviewNote: '', history: [...current.history, historyEntry('Informações enviadas para validação.', actor)] }), 'Enviado para validação.');
+  const selectTab = (nextTab) => navigate(planUrl(plan.id, item.id, nextTab, period));
+  const moveTab = (event, index) => {
+    const keys = { ArrowRight: 1, ArrowLeft: -1, Home: -index, End: tabs.length - index - 1 };
+    if (!(event.key in keys)) return;
+    event.preventDefault();
+    const nextIndex = (index + keys[event.key] + tabs.length) % tabs.length;
+    selectTab(tabs[nextIndex][0]);
+    requestAnimationFrame(() => document.querySelectorAll('.detail-tabs [role="tab"]')[nextIndex]?.focus());
+  };
+  return <><div className="item-heading" style={{ '--axis-color': axis?.color || '#2f78a5' }}><div className="section-heading"><div className="flex items-center gap-3"><span className="item-code">{plan.template.labels.item.toUpperCase()} {item.code}</span><Badge tone={statusTone(executionStatus(item))}>{executionStatus(item)}</Badge></div>{can(PERMISSIONS.EDIT_ITEM, resource) && <Button icon="edit" variant="ghost" onClick={() => onModal({ type: 'item', item })}>Editar informações</Button>}</div><h2>{item.title}</h2><p>{item.description}</p><div className="item-meta"><span><Icon name="layers" size={15} /><strong>{objective?.code} · {objective?.title}</strong></span><span><Icon name="user" size={15} /><strong>{item.owner}</strong></span>{item.partners && <span>Parceiros: {item.partners}</span>}</div>{extraFields.length > 0 && <div className="extra-values">{extraFields.map((field) => <span key={field.id}><b>{field.label}:</b> {presentExtra(field, item.extras[field.id])}</span>)}</div>}</div>
+    {canSeeWorkflow && <div className={`workflow-banner ${item.reviewStatus}`}><div><span>Validação</span><strong>{reviewStatusLabel(item.reviewStatus)}</strong>{item.reviewNote && <p>{item.reviewNote}</p>}</div><div>{can(PERMISSIONS.SUBMIT_ITEM, resource) && ['draft', 'changes_requested'].includes(item.reviewStatus) && <Button variant="primary" onClick={submit}>Enviar para validação</Button>}{can(PERMISSIONS.REVIEW_ITEM, resource) && item.reviewStatus === 'submitted' && <><Button onClick={() => onModal({ type: 'review', item, decision: 'changes_requested' })}>Solicitar correção</Button><Button variant="primary" onClick={() => onModal({ type: 'review', item, decision: 'validated' })}>Validar</Button></>}</div></div>}
+    {item.linkedPlan && <a className="linked-plan" href={`#${planUrl(item.linkedPlan)}`}><Icon name="link" size={16} /><span>Relacionado ao Plano Diretor de Logística Sustentável</span><Icon name="arrow" size={14} /></a>}
+    <div className="detail-tabs" role="tablist">{tabs.map(([value, icon, label], index) => <button key={value} className={tab === value ? 'active' : ''} role="tab" aria-selected={tab === value} tabIndex={tab === value ? 0 : -1} onClick={() => selectTab(value)} onKeyDown={(event) => moveTab(event, index)}><Icon name={icon} size={15} />{label}</button>)}</div><div className="tab-content" role="tabpanel">
+      {tab === 'acoes' && <Actions item={item} actor={actor} can={can} plan={plan} onAdd={() => onModal({ type: 'action', item })} onAddRisk={(action) => onModal({ type: 'risk', item, action })} onChange={(change, message) => changeItem(plan.id, item.id, (current) => ({ ...change(current), reviewStatus: ['submitted', 'validated'].includes(current.reviewStatus) ? 'draft' : current.reviewStatus }), message)} />}
+      {tab === 'indicadores' && <Indicators item={item} can={can} plan={plan} period={period} setPeriod={setPeriod} onRecord={() => onModal({ type: 'measurement', item, period })} onTargets={() => onModal({ type: 'targets', item })} />}
+      {tab === 'riscos' && <Risks item={item} canEdit={can(PERMISSIONS.MANAGE_RISK, resource)} onEdit={(risk) => onModal({ type: 'risk', item, action: item.actions.find((action) => action.id === risk.actionId), risk })} />}
+      {tab === 'historico' && <History item={item} canComment={can(PERMISSIONS.COMMENT_HISTORY, resource)} onComment={(text) => changeItem(plan.id, item.id, (current) => ({ ...current, history: [...current.history, historyEntry(text, actor)] }), 'Observação adicionada.')} />}
+    </div><footer className="source-note"><Icon name="info" size={13} />{item.source}</footer></>;
+}
+
+function StageRow({ task, action, actor, canUpdate, onChange }) {
   const [justifying, setJustifying] = useState(false);
   const [justification, setJustification] = useState(task.justification || '');
   const [error, setError] = useState('');
   const overdue = taskOverdue(task);
-  function saveJustification(event) {
-    event.preventDefault();
-    if (!justification.trim()) return setError('Informe uma justificativa.');
-    onChange((current) => ({ ...current, actions: current.actions.map((currentAction) => currentAction.id === action.id ? { ...currentAction, tasks: currentAction.tasks.map((currentTask) => currentTask.id === task.id ? { ...currentTask, justification: justification.trim() } : currentTask) } : currentAction), history: [...current.history, historyEntry(`Justificativa registrada para a etapa: ${task.title}.`, actor)] }), 'Justificativa salva.');
-    setJustifying(false); setError('');
-  }
-  return <div className={`task-row ${task.done ? 'done' : ''} ${!canUpdateStage ? 'read-only' : ''} ${overdue ? 'overdue' : ''}`}>
-    <input type="checkbox" aria-label={task.title} checked={task.done} disabled={!canUpdateStage} onChange={() => onChange((current) => ({ ...current, actions: current.actions.map((currentAction) => currentAction.id === action.id ? { ...currentAction, tasks: currentAction.tasks.map((currentTask) => currentTask.id === task.id ? { ...currentTask, done: !currentTask.done } : currentTask) } : currentAction), history: [...current.history, historyEntry(`${task.done ? 'Reaberta' : 'Concluída'} a etapa: ${task.title}.`, actor)] }), task.done ? 'Etapa reaberta.' : 'Etapa concluída.')} />
-    <span className="task-main"><span>{task.title}</span><small>Prazo: {formatDate(task.deadline)}</small></span>
-    {overdue && <button type="button" className="overdue-button" aria-label={`Etapa atrasada: ${task.title}`} title="Etapa atrasada. Adicione uma justificativa." onClick={() => setJustifying((current) => !current)}>!</button>}
-    {task.justification && <button type="button" className="justification-button" onClick={() => setJustifying((current) => !current)}>{justifying ? 'Ocultar justificativa' : 'Ver justificativa'}</button>}
-    {task.done && <small className="task-done" aria-hidden="true">Concluída</small>}
-    {justifying && <form className="justification-form" onSubmit={saveJustification}><label htmlFor={`justification-${task.id}`}>Justificativa {overdue ? 'do atraso' : 'da etapa'}</label><textarea id={`justification-${task.id}`} rows="2" maxLength={500} value={justification} onChange={(event) => setJustification(event.target.value)} placeholder="Explique o atraso ou registre uma observação." />{error && <p role="alert" className="form-error">{error}</p>}<div><button type="submit" className="button primary">Salvar justificativa</button><button type="button" className="button" onClick={() => { setJustifying(false); setError(''); }}>Cancelar</button></div></form>}
-    {!justifying && task.justification && <p className="justification-text"><b>Justificativa:</b> {task.justification}</p>}
-  </div>;
+  const changeStatus = (status) => { onChange((current) => ({ ...current, actions: current.actions.map((candidate) => candidate.id === action.id ? { ...candidate, tasks: candidate.tasks.map((stage) => stage.id === task.id ? { ...stage, status } : stage) } : candidate), history: [...current.history, historyEntry(`Etapa “${task.title}” alterada para ${stageStatusLabel(status)}.`, actor)] }), 'Situação da etapa atualizada.'); if (status === 'cancelled' && !task.justification) setJustifying(true); };
+  const saveJustification = (event) => { event.preventDefault(); if (!justification.trim()) return setError('Informe uma justificativa.'); onChange((current) => ({ ...current, actions: current.actions.map((candidate) => candidate.id === action.id ? { ...candidate, tasks: candidate.tasks.map((stage) => stage.id === task.id ? { ...stage, justification: justification.trim() } : stage) } : candidate), history: [...current.history, historyEntry(`Justificativa registrada para a etapa “${task.title}”.`, actor)] }), 'Justificativa salva.'); setJustifying(false); setError(''); };
+  return <div className={`task-row ${task.status === 'completed' ? 'done' : ''} ${!canUpdate ? 'read-only' : ''} ${overdue ? 'overdue' : ''}`}><span className="stage-status-marker" aria-hidden="true" /><span className="task-main"><span>{task.title}</span><small>Prazo: {formatDate(task.deadline)}{task.partners ? ` · Parceiros: ${task.partners}` : ''}</small></span>{canUpdate ? <select className="stage-status-select" aria-label={`Situação de ${task.title}`} value={task.status} onChange={(event) => changeStatus(event.target.value)}>{Object.entries(stageStatusLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select> : <Badge tone={task.status === 'completed' ? 'green' : overdue ? 'attention' : 'neutral'}>{overdue ? 'Atrasada' : stageStatusLabel(task.status)}</Badge>}{overdue && canUpdate && <Badge tone="attention">Atrasada</Badge>}{canUpdate && (overdue || task.status === 'cancelled' || task.justification) && <button type="button" className="justification-button" onClick={() => setJustifying((current) => !current)}>{task.justification ? 'Justificativa' : 'Justificar'}</button>}{justifying && canUpdate && <form className="justification-form" onSubmit={saveJustification}><label htmlFor={`justification-${task.id}`}>Justificativa da etapa</label><textarea id={`justification-${task.id}`} rows="2" maxLength={400} value={justification} onChange={(event) => setJustification(event.target.value)} placeholder="Informe a causa e, se possível, a nova previsão." />{error && <p role="alert" className="form-error">{error}</p>}<div><button type="submit" className="button primary">Salvar justificativa</button><button type="button" className="button" onClick={() => setJustifying(false)}>Cancelar</button></div></form>}{!justifying && task.justification && <p className="justification-text"><b>Justificativa:</b> {task.justification}</p>}</div>;
 }
 
 function Actions({ item, actor, can, plan, onAdd, onAddRisk, onChange }) {
@@ -182,89 +214,208 @@ function Actions({ item, actor, can, plan, onAdd, onAddRisk, onChange }) {
   const [adding, setAdding] = useState(null);
   const [taskName, setTaskName] = useState('');
   const [taskDeadline, setTaskDeadline] = useState('');
+  const [taskPartners, setTaskPartners] = useState('');
   const [error, setError] = useState('');
   const progress = executionProgress(item);
   const resource = resourceFor(plan, item);
   const canManageAction = can(PERMISSIONS.MANAGE_ACTION, resource);
   const canUpdateStage = can(PERMISSIONS.UPDATE_STAGE, resource);
   const canManageRisk = can(PERMISSIONS.MANAGE_RISK, resource);
-  function submitTask(event, actionId) {
-    event.preventDefault();
-    if (!taskName.trim()) return setError('Informe o nome da etapa.');
-    if (!taskDeadline) return setError('Informe o prazo da etapa.');
-    onChange((current) => ({ ...current, actions: current.actions.map((action) => action.id === actionId ? { ...action, tasks: [...action.tasks, { id: uid(), title: taskName.trim(), done: false, deadline: taskDeadline, justification: '' }] } : action), history: [...current.history, historyEntry(`Etapa adicionada: ${taskName.trim()}.`, actor)] }), 'Etapa adicionada.');
-    setAdding(null); setTaskName(''); setTaskDeadline(''); setError('');
-  }
+  const submitTask = (event, actionId) => { event.preventDefault(); if (!taskName.trim()) return setError('Informe o nome da etapa.'); if (!taskDeadline) return setError('Informe o prazo da etapa.'); onChange((current) => ({ ...current, actions: current.actions.map((action) => action.id === actionId ? { ...action, tasks: [...action.tasks, { id: uid(), title: taskName.trim(), status: 'not_started', deadline: taskDeadline, justification: '', partners: taskPartners.trim() }] } : action), history: [...current.history, historyEntry(`Etapa adicionada: ${taskName.trim()}.`, actor)] }), 'Etapa adicionada.'); setAdding(null); setTaskName(''); setTaskDeadline(''); setTaskPartners(''); setError(''); };
+  const toggleAction = (actionId) => setCollapsed((current) => current.includes(actionId) ? current.filter((id) => id !== actionId) : [...current, actionId]);
+  const cancelStage = () => { setAdding(null); setTaskName(''); setTaskDeadline(''); setTaskPartners(''); setError(''); };
   return <>
-    <div className="execution-summary" style={{ '--axis-color': item.axisColor || plan.axisColors?.[item.axis] || '#2f78a5' }}><div><span className="metric-label">EXECUÇÃO DAS AÇÕES</span><strong>{progress.total ? `${progress.percent}%` : '—'}</strong></div><div><Progress {...progress} label="ações" /><small>Média da execução das ações, calculada pelas suas etapas.</small></div></div>
-    <div className="section-heading actions-heading"><h3>Ações estratégicas <span>{item.actions.length}</span></h3>{canManageAction && <Button icon="plus" onClick={onAdd}>Adicionar ação</Button>}</div>
-    {!item.actions.length && <Empty title="Nenhuma ação cadastrada">Adicione uma ação e organize as etapas necessárias para realizá-la.</Empty>}
-    <div className="actions-list">{item.actions.map((action) => { const actionState = actionProgress(action); const isClosed = collapsed.includes(action.id); return <article className="action-card" key={action.id} style={{ '--axis-color': item.axisColor || '#2f78a5' }}>
-      <button className="action-heading" aria-expanded={!isClosed} onClick={() => setCollapsed((current) => current.includes(action.id) ? current.filter((id) => id !== action.id) : [...current, action.id])}><span className="action-number">{action.code || '—'}</span><span className="action-name">{action.title}<small>{action.owner} <span>·</span> Prazo: {formatDate(action.deadline)}</small></span><span className="task-count">{actionState.percent}%</span><Icon name="chevron" size={14} className={!isClosed ? 'rotated' : ''} /></button>
-      {!isClosed && <div className="action-body"><div className="action-progress"><Progress {...actionState} label="etapas" compact /></div>{action.tasks.map((task) => <StageRow key={task.id} task={task} action={action} actor={actor} canUpdateStage={canUpdateStage} onChange={onChange} />)}
-        {!action.tasks.length && <p className="hint px-5 pt-3">Esta ação ainda não possui etapas.</p>}
-        {adding === action.id ? <form className="inline-task-form" onSubmit={(event) => submitTask(event, action.id)}><input aria-label="Nome da etapa" autoFocus required maxLength={180} placeholder="Descreva a etapa…" value={taskName} onChange={(event) => setTaskName(event.target.value)} /><input aria-label="Prazo da etapa" type="date" min={`${plan.start}-01-01`} max={`${plan.end}-12-31`} required value={taskDeadline} onChange={(event) => setTaskDeadline(event.target.value)} /><Button type="submit" variant="primary">Adicionar</Button><Button onClick={() => { setAdding(null); setTaskName(''); setTaskDeadline(''); setError(''); }}>Cancelar</Button>{error && <p role="alert" className="form-error">{error}</p>}</form> : (canUpdateStage || canManageRisk) && <div className="action-tools">{canUpdateStage && <button className="add-task" onClick={() => { setAdding(action.id); setTaskName(''); setTaskDeadline(''); setError(''); }}><Icon name="plus" size={14} />Adicionar etapa<span className="sr-only"> em {action.title}</span></button>}{canManageRisk && <button className="add-risk" onClick={() => onAddRisk(action)}><Icon name="info" size={14} />Adicionar risco<span className="sr-only"> em {action.title}</span></button>}</div>}
-      </div>}
-    </article>; })}</div>
-  </>;
-}
-function Indicators({ item, can, plan, year, setYear, onRecord, onTargets }) {
-  const entry = latestMeasurement(item, year);
-  const result = metricResult(item, year);
-  const target = item.metric.targets[year];
-  const status = metricStatus(item, year);
-  const resource = resourceFor(plan, item);
-  const canEditTargets = can(PERMISSIONS.EDIT_TARGET, resource);
-  const canRecord = item.metric.qualitativeMode !== 'stages' && can(PERMISSIONS.RECORD_RESULT, resource);
-  const metricDescription = item.metric.type === 'qualitative' ? item.metric.qualitativeMode === 'stages' ? 'Percentual calculado pelas etapas da execução' : 'Entrega qualitativa acompanhada por Sim/Não' : `${item.metric.direction === 'down' ? 'Quanto menor, melhor' : 'Quanto maior, melhor'} · Consolidado anual`;
-  const typeLabel = item.metric.type === 'qualitative' ? item.metric.qualitativeMode === 'stages' ? 'Qualitativo · etapas' : 'Qualitativo · Sim/Não' : 'Quantitativo';
-  return <><div className="section-heading indicator-heading"><div><div className="indicator-title-line"><h3>{item.metric.name}</h3><span className={`metric-type-chip ${item.metric.type === 'qualitative' ? 'qualitative' : 'quantitative'}`}>{typeLabel}</span></div><p>{metricDescription}</p></div><Field label="Ano de referência" className="year-field"><select value={year} onChange={(e) => setYear(Number(e.target.value))}>{years(plan).map((y) => <option key={y}>{y}</option>)}</select></Field></div>
-    <IndicatorDashboard item={item} plan={plan} year={year} setYear={setYear} result={result} target={target} status={status} />
-    <div className="indicator-values"><div><span>Linha de base</span><strong>{formatMetricValue(item, item.metric.baseline)} <small>{item.metric.unit}</small></strong><p>{item.metric.reference}</p></div><div><span>Meta de {year}</span><strong>{target == null ? '—' : `${item.metric.direction === 'down' ? '≤ ' : ''}${formatMetricValue(item, target)}`} <small>{target == null ? '' : item.metric.unit}</small></strong><p>{target == null ? 'Sem meta definida para este ano' : 'Resultado esperado no período'}</p></div><div className="current-result"><span>{item.metric.qualitativeMode === 'stages' ? 'Execução das etapas' : 'Resultado registrado'}</span><strong>{formatMetricValue(item, result)} <small>{result == null ? '' : item.metric.unit}</small></strong><Badge tone={metricTone(item, year)}>{metricAchievement(item, year) == null ? status : `${metricAchievement(item, year)}% · ${status}`}</Badge></div></div>
-    <div className="formula"><Icon name="info" size={16} /><span>{item.metric.formula}</span></div>
-    <div className="section-heading annual-heading"><h3>Metas e resultados por ano</h3>{canEditTargets && <Button icon="edit" variant="ghost" onClick={onTargets}>Editar metas</Button>}</div>
-    <div className="table-scroll"><table className="annual-table"><thead><tr><th>Ano</th><th>Meta ({item.metric.unit})</th><th>Resultado ({item.metric.unit})</th><th>Situação do indicador</th></tr></thead><tbody>{years(plan).map((y) => { const achievement = metricAchievement(item, y); return <tr key={y} className={year === y ? 'current-year' : ''}><th scope="row">{y}</th><td>{formatMetricValue(item, item.metric.targets[y])}</td><td>{formatMetricValue(item, metricResult(item, y))}</td><td><Badge tone={metricTone(item, y)}>{achievement == null ? metricStatus(item, y) : `${achievement}% · ${metricStatus(item, y)}`}</Badge></td></tr>; })}</tbody></table></div>
-    <div className="record-footer"><p>{entry ? `Último registro para ${year}: ${formatDate(entry.at)}` : `Nenhum resultado registrado para ${year}.`}</p>{canRecord && <Button variant="primary" icon="plus" onClick={onRecord}>Registrar resultado</Button>}</div>
-    <div className="measurements"><h3>Registros de {year}</h3>{item.measurements.filter((m) => m.year === Number(year)).length ? [...item.measurements].reverse().filter((m) => m.year === Number(year)).map((m) => <article className="measurement" key={m.id}><div><strong>{formatNumber(m.value)} {item.metric.unit}</strong><time>{formatDate(m.at)}</time></div><p>{m.note}</p>{m.evidence && <a href={m.evidence} target="_blank" rel="noreferrer">Abrir referência da evidência <Icon name="arrow" size={13} /></a>}</article>) : <p className="hint">As medições e justificativas aparecerão aqui.</p>}</div>
+    <div className="execution-summary" style={{ '--axis-color': axisFor(plan, item)?.color || '#2f78a5' }}>
+      <div><span className="metric-label">EXECUÇÃO DAS ETAPAS</span><strong>{progress.total ? `${progress.percent}%` : '—'}</strong></div>
+      <div><Progress {...progress} /><small>Percentual calculado sobre todas as etapas ativas.</small></div>
+    </div>
+    <div className="section-heading actions-heading">
+      <h3>Ações estratégicas <span>{item.actions.length}</span></h3>
+      {canManageAction && <Button icon="plus" onClick={onAdd}>Adicionar ação</Button>}
+    </div>
+    {!item.actions.length && <Empty title="Nenhuma ação cadastrada">Adicione uma ação para organizar sua execução.</Empty>}
+    <div className="actions-list">
+      {item.actions.map((action) => {
+        const state = actionProgress(action);
+        const closed = collapsed.includes(action.id);
+        return <article className="action-card" key={action.id} style={{ '--axis-color': axisFor(plan, item)?.color || '#2f78a5' }}>
+          <button className="action-heading" aria-expanded={!closed} onClick={() => toggleAction(action.id)}>
+            <span className="action-number">{action.code}</span>
+            <span className="action-name">{action.title}<small>{action.owner} <span>·</span> Prazo: {formatDate(action.deadline)}</small></span>
+            <span className="task-count">{state.percent}%</span>
+            <Icon name="chevron" size={14} className={!closed ? 'rotated' : ''} />
+          </button>
+          {!closed && <div className="action-body">
+            <div className="action-progress"><Progress {...state} compact /></div>
+            {action.tasks.map((task) => <StageRow key={task.id} task={task} action={action} actor={actor} canUpdate={canUpdateStage} onChange={onChange} />)}
+            {!action.tasks.length && <p className="hint px-5 pt-3">Esta ação ainda não possui etapas.</p>}
+            {adding === action.id ? <form className="inline-task-form" onSubmit={(event) => submitTask(event, action.id)}>
+              <input aria-label="Nome da etapa" autoFocus required maxLength={180} placeholder="Descreva a etapa…" value={taskName} onChange={(event) => setTaskName(event.target.value)} />
+              <input aria-label="Prazo da etapa" type="date" min={`${plan.start}-01-01`} max={`${plan.end}-12-31`} required value={taskDeadline} onChange={(event) => setTaskDeadline(event.target.value)} />
+              <input aria-label="Parceiros da etapa" maxLength={150} placeholder="Parceiros (opcional)" value={taskPartners} onChange={(event) => setTaskPartners(event.target.value)} />
+              <Button type="submit" variant="primary">Adicionar</Button>
+              <Button onClick={cancelStage}>Cancelar</Button>
+              {error && <p role="alert" className="form-error">{error}</p>}
+            </form> : (canManageAction || canManageRisk) && <div className="action-tools">
+              {canManageAction && <button className="add-task" onClick={() => setAdding(action.id)}><Icon name="plus" size={14} />Adicionar etapa<span className="sr-only"> em {action.title}</span></button>}
+              {canManageRisk && <button className="add-risk" onClick={() => onAddRisk(action)}><Icon name="info" size={14} />Adicionar risco<span className="sr-only"> em {action.title}</span></button>}
+            </div>}
+          </div>}
+        </article>;
+      })}
+    </div>
   </>;
 }
 
-function IndicatorDashboard({ item, plan, year, setYear, result, target, status }) {
-  const achievement = metricAchievement(item, year);
-  const yearsList = years(plan);
-  const valueLabel = item.metric.qualitativeMode === 'stages' ? `${result ?? 0}%` : formatMetricValue(item, result);
-  const targetLabel = formatMetricValue(item, target);
-  return <section className="indicator-dashboard" style={{ '--axis-color': item.axisColor || plan.axisColors?.[item.axis] || '#2f78a5' }} aria-label="Painel do indicador">
-    <div className="dashboard-heading"><div><span className="metric-label">PAINEL DE ACOMPANHAMENTO</span><h4>Visão da meta</h4></div><Badge tone={metricTone(item, year)}>{status}</Badge></div>
-    <div className="dashboard-cards"><div className="dashboard-card dashboard-current"><span>Resultado atual</span><strong>{valueLabel}<small>{item.metric.qualitativeMode === 'stages' ? '' : item.metric.unit}</small></strong><p>{result == null || result === '' ? 'Nenhum resultado registrado' : `Referência: ${year}`}</p></div><div className="dashboard-card"><span>Meta do ano</span><strong>{target == null ? '—' : targetLabel}<small>{target == null ? '' : item.metric.unit}</small></strong><p>{target == null ? 'Defina uma meta para acompanhar' : 'Resultado esperado'}</p></div><div className="dashboard-card"><span>Atingimento</span><strong>{achievement == null ? '—' : `${achievement}%`}</strong><div className="dashboard-bar"><span style={{ width: `${achievement == null ? 0 : achievement}%` }} /></div><p>{achievement == null ? 'Aguardando medição' : achievement >= 100 ? 'Meta alcançada' : 'Em acompanhamento'}</p></div></div>
-    <div className="annual-dashboard"><div className="dashboard-heading"><h4>Evolução anual</h4><span className="dashboard-legend"><i className="legend-target" /> meta <i className="legend-result" /> resultado</span></div><div className="annual-bars">{yearsList.map((annualYear) => { const annualTarget = item.metric.targets[annualYear]; const annualResult = metricResult(item, annualYear); const annualAchievement = metricAchievement(item, annualYear); return <button type="button" className={`annual-bar ${annualYear === year ? 'selected' : ''}`} key={annualYear} onClick={() => setYear(annualYear)} title={`${annualYear}: ${metricStatus(item, annualYear)}`}><span className="annual-bar-value">{annualAchievement == null ? '—' : `${annualAchievement}%`}</span><span className="annual-bar-track"><i className="annual-bar-target" style={{ height: `${annualTarget == null ? 0 : item.metric.qualitativeMode === 'stages' ? annualTarget : 100}%` }} /><i className="annual-bar-result" style={{ height: `${annualAchievement == null ? 0 : Math.min(annualAchievement, 100)}%` }} /></span><b>{annualYear}</b><small>{annualResult == null || annualResult === '' ? 'Sem resultado' : formatMetricValue(item, annualResult)}</small></button>; })}</div></div>
-  </section>;
+function Indicators({ item, can, plan, period, setPeriod, onRecord, onTargets }) {
+  const result = metricResult(item, period);
+  const target = item.metric.targets[period];
+  const status = metricStatus(item, period);
+  const resource = resourceFor(plan, item);
+  const canRecord = item.metric.measurementMode !== 'stages' && can(PERMISSIONS.RECORD_RESULT, resource);
+  const modeLabels = { manual: 'Valor informado', delivery: 'Entrega acompanhada', stages: 'Calculado pelas etapas' };
+  const description = item.metric.measurementMode === 'stages' ? 'O resultado é calculado automaticamente pela conclusão das etapas.' : item.metric.measurementMode === 'delivery' ? 'A entrega é acompanhada por sua situação e evidências.' : `${item.metric.direction === 'down' ? 'Quanto menor, melhor' : 'Quanto maior, melhor'} · ${item.metric.periodicity === 'annual' ? 'Consolidado anual' : 'Resultado do ciclo'}`;
+  const resultBadge = item.metric.valueType === 'status' || metricAchievement(item, period) == null ? status : `${metricAchievement(item, period)}% · ${status}`;
+  return <><div className="section-heading indicator-heading"><div><div className="indicator-title-line"><h3>{item.metric.name}</h3><span className="metric-type-chip quantitative">{modeLabels[item.metric.measurementMode]}</span></div><p>{description}</p></div><Field label={item.metric.periodicity === 'final' ? 'Período' : 'Ano de referência'} className="year-field"><select value={period} onChange={(event) => setPeriod(Number(event.target.value))}>{periods(plan, item).map((value) => <option key={value} value={value}>{periodLabel(plan, item, value)}</option>)}</select></Field></div><IndicatorDashboard item={item} plan={plan} period={period} setPeriod={setPeriod} result={result} target={target} status={status} /><div className="indicator-values"><div><span>Linha de base</span><strong>{formatMetricValue(item, item.metric.baseline)} <small>{item.metric.unit}</small></strong><p>{item.metric.reference}</p></div><div><span>Meta</span><strong>{target == null ? '—' : `${item.metric.direction === 'down' ? '≤ ' : ''}${formatMetricValue(item, target)}`} <small>{target == null ? '' : item.metric.unit}</small></strong><p>{periodLabel(plan, item, period)}</p></div><div className="current-result"><span>{item.metric.measurementMode === 'stages' ? 'Execução das etapas' : 'Resultado registrado'}</span><strong>{formatMetricValue(item, result)} <small>{result == null ? '' : item.metric.unit}</small></strong><Badge tone={metricTone(item, period)}>{resultBadge}</Badge></div></div><div className="formula"><Icon name="info" size={16} /><span>{item.metric.formula}</span></div><div className="section-heading annual-heading"><h3>{item.metric.periodicity === 'final' ? 'Meta e resultado do ciclo' : 'Metas e resultados por ano'}</h3>{can(PERMISSIONS.EDIT_TARGET, resource) && <Button icon="edit" variant="ghost" onClick={onTargets}>Editar metas</Button>}</div><div className="table-scroll"><table className="annual-table"><thead><tr><th>Período</th><th>Meta</th><th>Resultado</th><th>Situação</th></tr></thead><tbody>{periods(plan, item).map((value) => { const achievement = metricAchievement(item, value); const label = item.metric.valueType === 'status' || achievement == null ? metricStatus(item, value) : `${achievement}% · ${metricStatus(item, value)}`; return <tr key={value} className={period === value ? 'current-year' : ''}><th scope="row">{periodLabel(plan, item, value)}</th><td>{formatMetricValue(item, item.metric.targets[value])}</td><td>{formatMetricValue(item, metricResult(item, value))}</td><td><Badge tone={metricTone(item, value)}>{label}</Badge></td></tr>; })}</tbody></table></div><div className="record-footer"><p>{latestMeasurement(item, period) ? `Último registro: ${formatDate(latestMeasurement(item, period).at)}` : item.metric.measurementMode === 'stages' ? 'Resultado atualizado automaticamente pelas etapas.' : 'Nenhum resultado registrado para o período.'}</p>{canRecord && <Button variant="primary" icon="plus" onClick={onRecord}>Registrar resultado</Button>}</div><div className="measurements"><h3>Registros do período</h3>{item.measurements.filter((entry) => Number(entry.year) === Number(period)).length ? [...item.measurements].reverse().filter((entry) => Number(entry.year) === Number(period)).map((entry) => <article className="measurement" key={entry.id}><div><strong>{formatMetricValue(item, entry.value)} {item.metric.unit}</strong><time>{formatDate(entry.at)}</time></div><p>{entry.note}</p>{entry.evidence && <a href={entry.evidence} target="_blank" rel="noreferrer">Abrir evidência <Icon name="arrow" size={13} /></a>}</article>) : <p className="hint">Nenhum registro manual para este período.</p>}</div></>;
+}
+
+function IndicatorDashboard({ item, plan, period, setPeriod, result, target, status }) {
+  const achievement = metricAchievement(item, period);
+  const list = periods(plan, item);
+  return (
+    <section
+      className="indicator-dashboard"
+      style={{ '--axis-color': axisFor(plan, item)?.color || '#2f78a5' }}
+      aria-label="Painel do indicador"
+    >
+      <div className="dashboard-heading">
+        <div>
+          <span className="metric-label">PAINEL DE ACOMPANHAMENTO</span>
+          <h4>Visão da meta</h4>
+        </div>
+        <Badge tone={metricTone(item, period)}>{status}</Badge>
+      </div>
+      <div className="dashboard-cards">
+        <div className="dashboard-card dashboard-current">
+          <span>Resultado atual</span>
+          <strong>{formatMetricValue(item, result)}<small>{result == null ? '' : item.metric.unit}</small></strong>
+          <p>{periodLabel(plan, item, period)}</p>
+        </div>
+        <div className="dashboard-card">
+          <span>Meta</span>
+          <strong>{formatMetricValue(item, target)}<small>{target == null ? '' : item.metric.unit}</small></strong>
+          <p>Resultado esperado</p>
+        </div>
+        {item.metric.valueType === 'status' ? <div className="dashboard-card"><span>Situação da meta</span><strong className="dashboard-status-value">{status}</strong><p>Acompanhamento descritivo</p></div> : <div className="dashboard-card">
+          <span>Atingimento</span>
+          <strong>{achievement == null ? '—' : `${achievement}%`}</strong>
+          <div className="dashboard-bar"><span style={{ width: `${achievement == null ? 0 : achievement}%` }} /></div>
+          <p>{achievement == null ? 'Aguardando resultado' : achievement >= 100 ? 'Meta alcançada' : 'Em acompanhamento'}</p>
+        </div>}
+      </div>
+      {list.length > 1 && item.metric.valueType !== 'status' && (
+        <div className="annual-dashboard">
+          <div className="dashboard-heading"><h4>Evolução anual</h4></div>
+          <div className="annual-bars">
+            {list.map((value) => {
+              const annualAchievement = metricAchievement(item, value);
+              return (
+                <button
+                  type="button"
+                  className={`annual-bar ${value === period ? 'selected' : ''}`}
+                  key={value}
+                  onClick={() => setPeriod(value)}
+                  title={`${value}: ${metricStatus(item, value)}`}
+                >
+                  <span className="annual-bar-value">{annualAchievement == null ? '—' : `${annualAchievement}%`}</span>
+                  <span className="annual-bar-track">
+                    <i className="annual-bar-target" style={{ height: item.metric.targets[value] == null ? '0%' : '100%' }} />
+                    <i className="annual-bar-result" style={{ height: `${annualAchievement == null ? 0 : annualAchievement}%` }} />
+                  </span>
+                  <b>{value}</b>
+                  <small>{formatMetricValue(item, metricResult(item, value))}</small>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </section>
+  );
 }
 
 function Risks({ item, canEdit, onEdit }) {
   const [selected, setSelected] = useState(null);
   const [details, setDetails] = useState(null);
   const risks = item.risks || [];
-  const levels = [5, 4, 3, 2, 1];
+  const probabilities = [5, 4, 3, 2, 1];
   const impacts = [1, 2, 3, 4, 5];
   const selectedRisks = selected?.mode === 'cell'
-    ? risks.filter((risk) => risk.probability === selected.probability && risk.impact === selected.impact)
-    : selected?.mode === 'level' ? risks.filter((risk) => riskLevel(risk.probability, risk.impact) === selected.level) : risks;
-  const selectLevel = (level) => setSelected(selected?.mode === 'level' && selected.level === level ? null : { mode: 'level', level });
-  return <div className="risk-panel"><div className="section-heading"><div><h3>Riscos associados à execução</h3><p className="hint">Cada risco está vinculado a uma ação e a uma etapa deste planejamento.</p></div><Badge>{risks.length} registros</Badge></div>
-    <div className="risk-legend"><button className="risk-filter-button" aria-pressed={selected?.level === 'low'} onClick={() => selectLevel('low')}><i className="risk-dot low" />Baixo <small>{risks.filter((risk) => riskLevel(risk.probability, risk.impact) === 'low').length}</small></button><button className="risk-filter-button" aria-pressed={selected?.level === 'moderate'} onClick={() => selectLevel('moderate')}><i className="risk-dot moderate" />Moderado <small>{risks.filter((risk) => riskLevel(risk.probability, risk.impact) === 'moderate').length}</small></button><button className="risk-filter-button" aria-pressed={selected?.level === 'high'} onClick={() => selectLevel('high')}><i className="risk-dot high" />Alto <small>{risks.filter((risk) => riskLevel(risk.probability, risk.impact) === 'high').length}</small></button><button className="risk-filter-button" aria-pressed={selected?.level === 'critical'} onClick={() => selectLevel('critical')}><i className="risk-dot critical" />Crítico <small>{risks.filter((risk) => riskLevel(risk.probability, risk.impact) === 'critical').length}</small></button></div>
-    <div className="risk-matrix-wrap"><div className="risk-axis-label vertical">PROBABILIDADE</div><div className="risk-matrix"><div className="risk-corner"><span>IMPACTO</span></div><div className="risk-impact-head">{impacts.map((impact) => <span key={impact}>{impact}</span>)}</div>{levels.map((probability) => <React.Fragment key={probability}><span className="risk-probability">{probability}</span>{impacts.map((impact) => { const level = riskLevel(probability, impact); const count = risks.filter((risk) => risk.probability === probability && risk.impact === impact).length; const active = selected?.mode === 'cell' && selected.probability === probability && selected.impact === impact; return <button key={`${probability}-${impact}`} className={`risk-cell ${level} ${active ? 'selected' : ''}`} aria-label={`Probabilidade ${probability}, impacto ${impact}: ${riskLevelLabel(level)}${count ? `, ${count} risco${count > 1 ? 's' : ''}` : ''}`} aria-pressed={active} onClick={() => setSelected(active ? null : { mode: 'cell', probability, impact, level })}><b>{riskLevelLabel(level)}</b>{count > 0 && <small>{count}</small>}</button>; })}</React.Fragment>)}</div></div>
-    <p className="risk-matrix-caption">Clique em uma célula para filtrar a combinação exata. Use a legenda para ver todos os riscos de uma categoria.</p>
-    {selected && <div className="risk-filter"><strong>{selected.mode === 'cell' ? `P${selected.probability} × I${selected.impact}` : riskLevelLabel(selected.level)}</strong><span>{selected.mode === 'cell' ? riskLevelLabel(selected.level) : 'Todos os riscos desta faixa'}</span><button className="text-button" onClick={() => setSelected(null)}>Mostrar todos</button></div>}
-    <div className="risk-list">{selectedRisks.length ? selectedRisks.map((risk) => <article className="risk-card" key={risk.id}><div className={`risk-card-level ${riskLevel(risk.probability, risk.impact)}`}><strong>{riskLevelLabel(riskLevel(risk.probability, risk.impact))}</strong><span>RI {riskScore(risk.probability, risk.impact)} · RR {formatNumber(residualRisk(risk.probability, risk.impact, risk.maturity))}</span></div><div className="risk-card-body"><div className="risk-card-title"><h4>{risk.title}</h4><div><button className="text-button" onClick={() => setDetails(details === risk.id ? null : risk.id)}>{details === risk.id ? 'Ocultar detalhes' : 'Detalhar'}</button>{canEdit && <button className="text-button" onClick={() => onEdit(risk)}>Editar</button>}</div></div><p><b>Ação:</b> {item.actions.find((action) => action.id === risk.actionId)?.title || risk.actionId} · <b>Etapa:</b> {risk.stage}</p><p><b>Categoria:</b> {risk.category} · <b>Resposta:</b> {risk.response}</p>{details === risk.id && <div className="risk-extra-details"><p><b>Risco estratégico:</b> {risk.strategicRisk}</p><p><b>Causa:</b> {risk.cause}</p><p><b>Consequência:</b> {risk.consequence}</p><p><b>Controle:</b> {risk.controls} · {risk.controlType} · {risk.maturity} (FC {controlFactor(risk.maturity)})</p><p><b>Tratamento:</b> {risk.treatment}</p><div className="risk-card-meta"><span>Responsável: <b>{risk.treatmentOwner}</b></span><span>Execução: <b>{risk.execution}%</b></span><span>Revisão: <b>{risk.review}</b></span><span>Status: <b>{risk.status}</b></span></div></div>}</div></article>) : <Empty title="Nenhum risco nesta classificação">Selecione outra célula ou categoria para consultar os riscos do plano.</Empty>}</div>
-  </div>;
+    ? risks.filter((entry) => entry.probability === selected.probability && entry.impact === selected.impact)
+    : selected?.mode === 'level'
+      ? risks.filter((entry) => riskLevel(entry.probability, entry.impact) === selected.level)
+      : risks;
+  const selectLevel = (level) => setSelected((current) => current?.mode === 'level' && current.level === level ? null : { mode: 'level', level });
+  return (
+    <div className="risk-panel">
+      <div className="section-heading">
+        <div>
+          <h3>Riscos associados à execução</h3>
+          <p className="hint">Riscos vinculados às ações e etapas deste item.</p>
+        </div>
+        <Badge>{risks.length} registros</Badge>
+      </div>
+      <div className="risk-legend">
+        {['low', 'moderate', 'high', 'critical'].map((level) => <button key={level} className="risk-filter-button" aria-pressed={selected?.mode === 'level' && selected.level === level} onClick={() => selectLevel(level)}><i className={`risk-dot ${level}`} />{riskLevelLabel(level)} <small>{risks.filter((entry) => riskLevel(entry.probability, entry.impact) === level).length}</small></button>)}
+      </div>
+      <div className="risk-matrix-wrap">
+        <div className="risk-axis-label vertical">PROBABILIDADE</div>
+        <div className="risk-matrix">
+          <div className="risk-corner"><span>IMPACTO</span></div>
+          <div className="risk-impact-head">{impacts.map((impact) => <span key={impact}>{impact}</span>)}</div>
+          {probabilities.map((probability) => <React.Fragment key={probability}>
+            <span className="risk-probability">{probability}</span>
+            {impacts.map((impact) => {
+              const level = riskLevel(probability, impact);
+              const count = risks.filter((entry) => entry.probability === probability && entry.impact === impact).length;
+              const active = selected?.mode === 'cell' && selected.probability === probability && selected.impact === impact;
+              return <button key={`${probability}-${impact}`} className={`risk-cell ${level} ${active ? 'selected' : ''}`} aria-label={`Probabilidade ${probability}, impacto ${impact}: ${riskLevelLabel(level)}${count ? `, ${count} risco${count > 1 ? 's' : ''}` : ''}`} aria-pressed={active} onClick={() => setSelected(active ? null : { mode: 'cell', probability, impact, level })}><b>{riskLevelLabel(level)}</b>{count > 0 && <small>{count}</small>}</button>;
+            })}
+          </React.Fragment>)}
+        </div>
+      </div>
+      <p className="risk-matrix-caption">Selecione uma célula ou classificação para filtrar os riscos.</p>
+      {selected && <div className="risk-filter"><strong>{selected.mode === 'cell' ? `P${selected.probability} × I${selected.impact}` : riskLevelLabel(selected.level)}</strong><span>{selected.mode === 'cell' ? riskLevelLabel(selected.level) : 'Todos os riscos desta classificação'}</span><button className="text-button" onClick={() => setSelected(null)}>Mostrar todos</button></div>}
+      <div className="risk-list">
+        {selectedRisks.length ? selectedRisks.map((entry) => (
+          <article className="risk-card" key={entry.id}>
+            <div className={`risk-card-level ${riskLevel(entry.probability, entry.impact)}`}>
+              <strong>{riskLevelLabel(riskLevel(entry.probability, entry.impact))}</strong>
+              <span>RI {riskScore(entry.probability, entry.impact)} · RR {formatNumber(residualRisk(entry.probability, entry.impact, entry.maturity))}</span>
+            </div>
+            <div className="risk-card-body">
+              <div className="risk-card-title">
+                <h4>{entry.title}</h4>
+                <div><button className="text-button" onClick={() => setDetails((current) => current === entry.id ? null : entry.id)}>{details === entry.id ? 'Ocultar detalhes' : 'Detalhar'}</button>{canEdit && <button className="text-button" onClick={() => onEdit(entry)}>Editar</button>}</div>
+              </div>
+              <p><b>Ação:</b> {item.actions.find((action) => action.id === entry.actionId)?.title || entry.actionId} · <b>Etapa:</b> {entry.stage || 'Não especificada'}</p>
+              <p><b>Categoria:</b> {entry.category} · <b>Resposta:</b> {entry.response}</p>
+              {details === entry.id && <div className="risk-extra-details"><p><b>Risco estratégico:</b> {entry.strategicRisk}</p><p><b>Causa:</b> {entry.cause}</p><p><b>Consequência:</b> {entry.consequence}</p><p><b>Controle:</b> {entry.controls} · {entry.controlType} · {entry.maturity} (FC {controlFactor(entry.maturity)})</p><p><b>Tratamento:</b> {entry.treatment}</p><div className="risk-card-meta"><span>Responsável: <b>{entry.treatmentOwner}</b></span><span>Execução: <b>{entry.execution}%</b></span><span>Revisão: <b>{entry.review}</b></span><span>Status: <b>{entry.status}</b></span></div></div>}
+            </div>
+          </article>
+        )) : (
+          <Empty title={risks.length ? 'Nenhum risco nesta classificação' : 'Nenhum risco cadastrado'}>{risks.length ? 'Selecione outra célula ou classificação.' : 'Os riscos vinculados às etapas aparecerão aqui.'}</Empty>
+        )}
+      </div>
+    </div>
+  );
 }
 
 function History({ item, canComment, onComment }) {
   const [comment, setComment] = useState('');
   const [error, setError] = useState('');
-  function submit(event) { event.preventDefault(); if (!comment.trim()) return setError('Escreva uma observação.'); onComment(comment.trim()); setComment(''); setError(''); }
-  return <><div className="section-heading"><div><h3>Histórico do acompanhamento</h3><p className="hint">Atualizações, resultados e observações deste item.</p></div><Badge>{item.history.length} registros</Badge></div>{canComment && <form className="comment-form" onSubmit={submit}><Field label="Adicionar observação"><textarea rows="2" required maxLength={2000} placeholder="Registre um contexto ou encaminhamento…" value={comment} onChange={(e) => setComment(e.target.value)} /></Field>{error && <p role="alert" className="form-error">{error}</p>}<Button type="submit">Salvar observação</Button></form>}<div className="timeline">{[...item.history].reverse().map((h) => <article key={h.id}><span className="timeline-dot" /><div className="timeline-meta"><strong>{h.actor}</strong><time>{formatDate(h.at)}</time></div><p>{h.text}</p></article>)}</div></>;
+  const submit = (event) => { event.preventDefault(); if (!comment.trim()) return setError('Escreva uma observação.'); onComment(comment.trim()); setComment(''); setError(''); };
+  return <><div className="section-heading"><div><h3>Histórico do acompanhamento</h3><p className="hint">Atualizações, resultados, validações e observações.</p></div><Badge>{item.history.length} registros</Badge></div>{canComment && <form className="comment-form" onSubmit={submit}><Field label="Adicionar observação"><textarea rows="2" required maxLength={400} placeholder="Registre um contexto ou encaminhamento…" value={comment} onChange={(event) => setComment(event.target.value)} /></Field>{error && <p role="alert" className="form-error">{error}</p>}<Button type="submit">Salvar observação</Button></form>}<div className="timeline">{[...item.history].reverse().map((entry) => <article key={entry.id}><span className="timeline-dot" /><div className="timeline-meta"><strong>{entry.actor}</strong><time>{formatDate(entry.at)}</time></div><p>{entry.text}</p></article>)}</div></>;
 }
 
 createRoot(document.getElementById('root')).render(<SessionProvider><AppGate /></SessionProvider>);

@@ -11,18 +11,26 @@ const publicSession = () => ({
   grants: [{ permission: PERMISSIONS.VIEW_PUBLISHED_PLAN, scope: { type: 'global' } }],
 });
 
+const present = (value) => typeof value === 'string' && value.trim().length > 0;
+const validScope = (scope) => scope?.type === 'global'
+  || (scope?.type === 'plan' && present(scope.planId))
+  || (scope?.type === 'axis' && present(scope.planId) && present(scope.axisId))
+  || (scope?.type === 'item' && present(scope.planId) && present(scope.itemId));
+
 export function normalizeSession(payload) {
   if (!payload || payload.authenticated !== true) return publicSession();
-  if (!payload.user?.id || !Array.isArray(payload.roles) || !Array.isArray(payload.grants)) throw new Error('Resposta de sessão inválida.');
+  if (!String(payload.user?.id || '').trim() || !String(payload.user?.name || '').trim() || !Array.isArray(payload.roles) || !Array.isArray(payload.grants)) throw new Error('Resposta de sessão inválida.');
+  if (payload.roles.some((role) => !present(role?.code) || !present(role?.name)) || payload.grants.some((grant) => !present(grant?.permission) || !validScope(grant?.scope))) throw new Error('Resposta de sessão inválida.');
+  if (!payload.grants.some((grant) => grant.permission === PERMISSIONS.VIEW_PUBLISHED_PLAN && grant.scope.type === 'global')) throw new Error('A sessão não preserva o acesso público global.');
   return {
     authenticated: true,
     user: {
-      id: String(payload.user.id),
-      name: payload.user.name ? String(payload.user.name) : '',
-      email: payload.user.email ? String(payload.user.email) : '',
+      id: String(payload.user.id).trim(),
+      name: String(payload.user.name).trim(),
+      email: payload.user.email == null ? null : String(payload.user.email).trim(),
     },
-    roles: payload.roles.map((role) => ({ code: String(role.code), name: String(role.name || role.code) })),
-    grants: payload.grants.map((grant) => ({ permission: String(grant.permission), scope: grant.scope || { type: 'global' } })),
+    roles: payload.roles.map((role) => ({ code: String(role.code), name: String(role.name) })),
+    grants: payload.grants.map((grant) => ({ permission: String(grant.permission), scope: grant.scope })),
   };
 }
 

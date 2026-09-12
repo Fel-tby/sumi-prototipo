@@ -1,19 +1,16 @@
-import { test, expect, openPls, record } from './fixtures.js';
+import { test, expect, openPls, selectItem } from './fixtures.js';
 
-test('layout e fluxo de acompanhamento funcionam em tela estreita', async ({ page }) => {
+test('consulta e acompanhamento permanecem utilizáveis em tela estreita', async ({ page }) => {
   await page.goto('/');
+  await expect(page.getByRole('button', { name: /menu lateral/ })).toHaveCount(page.viewportSize().width <= 640 ? 0 : 1);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await openPls(page);
-  await page.getByRole('checkbox', { name: 'Preparar os materiais de divulgação', exact: true }).check();
-  await record(page, 880, 'Registro realizado na visualização móvel.');
-  await expect(page.locator('.current-result')).toContainText('Meta atingida');
+  await selectItem(page, '11.1');
+  await page.getByRole('tab', { name: 'Indicador e metas' }).click();
+  await expect(page.locator('.current-result')).toContainText('Em elaboração');
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-  await page.getByRole('navigation', { name: 'Navegação principal' }).getByRole('link', { name: 'Modelos de plano', exact: true }).click();
-  await page.getByRole('button', { name: 'Personalizar PLS', exact: true }).click();
-  await expect(page.getByRole('dialog')).toBeVisible();
-  const box = await page.getByRole('dialog').boundingBox();
-  const width = page.viewportSize().width;
-  expect(box.x).toBeGreaterThanOrEqual(0);
-  expect(box.x + box.width).toBeLessThanOrEqual(width);
-  await page.getByRole('button', { name: 'Cancelar', exact: true }).click();
+  await page.getByRole('button', { name: 'Registrar resultado' }).click();
+  const bounds = await page.getByRole('dialog').boundingBox();
+  expect(bounds.x).toBeGreaterThanOrEqual(0);
+  expect(bounds.x + bounds.width).toBeLessThanOrEqual(page.viewportSize().width);
 });

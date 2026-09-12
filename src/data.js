@@ -1,108 +1,120 @@
-const task = (id, title, done = false, deadline = '', justification = '') => ({ id, title, done, deadline, justification });
-const action = (id, title, tasks, owner = 'SEPLAN', deadline = '2026-12-15') => ({ id, title, tasks, owner, deadline });
-const historical = (text) => [{ id: 'initial', at: '2026-08-27T14:30:00-03:00', text, actor: 'Dados demonstrativos' }];
-const measurement = (value) => [{ id: 'initial', value, year: 2026, note: 'Medição ilustrativa para demonstração do fluxo.', at: '2026-08-27T14:30:00-03:00', evidence: '' }];
-const targets = (value) => Object.fromEntries([2026, 2027, 2028, 2029, 2030].map((y) => [y, value]));
-const risk = (id, actionId, stage, title, probability, impact, response, owner, details = {}) => ({ id, actionId, stage, title, probability, impact, response, owner, strategicRisk: details.strategicRisk || 'Não elaborar tempestivamente a iniciativa do plano.', cause: details.cause || 'Baixa colaboração ou ausência de critérios padronizados.', consequence: details.consequence || 'Atraso na execução e comprometimento da meta institucional.', category: details.category || 'Operacional', controls: details.controls || 'Acompanhamento periódico pela SEPLAN e validação com os setores envolvidos.', controlType: details.controlType || 'Preventivo', maturity: details.maturity || 'Fraco', treatment: details.treatment || 'Acompanhar a etapa, formalizar responsáveis e revisar o cronograma.', treatmentOwner: details.treatmentOwner || owner, deadline: details.deadline || '2026-12-31', execution: details.execution ?? 0, situation: details.situation || 'Não iniciada', review: details.review || 'Trimestral', status: details.status || 'Ativo' });
+const stage = (id, title, status = 'not_started', deadline = '', justification = '', partners = '') => ({ id, title, status, deadline, justification, partners });
+const action = (id, code, title, stages, owner = 'SEPLAN', deadline = '2026-12-15') => ({ id, code, title, owner, deadline, tasks: stages });
+const history = (text, actor = 'SEPLAN') => [{ id: `history-${Math.random().toString(16).slice(2)}`, at: '2026-09-08T14:30:00-03:00', text, actor }];
+const measurement = (year, value, note, evidence = '') => [{ id: `result-${year}-${String(value)}`, year, value, note, at: '2026-09-08T14:30:00-03:00', evidence }];
+const risk = (id, actionId, stageName, title, probability, impact, owner, details = {}) => ({
+  id, actionId, stage: stageName, title, probability, impact, owner,
+  strategicRisk: details.strategicRisk || 'Comprometimento do resultado institucional.',
+  cause: details.cause || 'Dependência de informações e articulação entre setores.',
+  consequence: details.consequence || 'Atraso na execução da ação planejada.',
+  category: details.category || 'Operacional', controls: details.controls || 'Acompanhamento periódico do setor responsável.',
+  controlType: details.controlType || 'Preventivo', maturity: details.maturity || 'Fraco', response: details.response || 'Mitigar',
+  treatment: details.treatment || 'Revisar o cronograma e formalizar as responsabilidades.', treatmentOwner: details.treatmentOwner || owner,
+  deadline: details.deadline || '2026-12-31', execution: details.execution ?? 0, situation: details.situation || 'Não iniciada',
+  review: details.review || 'Trimestral', status: details.status || 'Ativo',
+});
 
 export const templates = [
-  { id: 'pdi', type: 'PDI', name: 'Desenvolvimento institucional', version: 1, description: 'Objetivos, iniciativas e metas anuais para acompanhar a estratégia institucional.', labels: { axis: 'Eixo', objective: 'Objetivo', item: 'Iniciativa' }, fields: [] },
-  { id: 'pls', type: 'PLS', name: 'Logística sustentável', version: 1, description: 'Compromissos de sustentabilidade, indicadores e ações com prazos.', labels: { axis: 'Eixo', objective: 'Objetivo', item: 'Meta' }, fields: [] },
+  { id: 'pdi', type: 'PDI', name: 'Desenvolvimento institucional', version: 2, description: 'Objetivos, iniciativas, indicadores, metas anuais, ações e etapas.', labels: { axis: 'Eixo', objective: 'Objetivo', item: 'Iniciativa' }, defaultPeriodicity: 'annual', fields: [] },
+  { id: 'pls', type: 'PLS', name: 'Logística sustentável', version: 2, description: 'Objetivos, metas, indicadores, ações e entregas de sustentabilidade.', labels: { axis: 'Eixo', objective: 'Objetivo', item: 'Meta' }, defaultPeriodicity: 'final', fields: [] },
+];
+
+const pdiAxes = [
+  { id: 'pdi-axis-8', code: '8', name: 'Governança e Gestão Institucional', color: '#2f78a5', ownerUnit: 'SEPLAN', managerIds: ['dev-contributor'], reviewerIds: ['dev-reviewer'] },
+];
+
+const pdiObjectives = [
+  { id: 'pdi-objective-8-1', axisId: 'pdi-axis-8', code: '8.1', title: 'Aperfeiçoar Práticas de Governança Pública' },
+  { id: 'pdi-objective-8-2', axisId: 'pdi-axis-8', code: '8.2', title: 'Aperfeiçoar Práticas de Gestão Institucional' },
 ];
 
 const pdiItems = [
   {
-    id: 'riscos', code: '8.1.3', axis: '8 · Governança e Gestão Institucional', objective: '8.1 · Aperfeiçoar Práticas de Governança Pública',
+    id: 'riscos', code: '8.1.3', axisId: 'pdi-axis-8', objectiveId: 'pdi-objective-8-1',
     title: 'Elaborar o Plano de Gestão de Riscos da UFCG', owner: 'SEPLAN', partners: 'Setores da UFCG',
-    description: 'Estruturar a gestão de riscos da instituição, com participação dos setores e capacitação dos gestores.',
-    source: 'PDI 2026–2030 · Eixo 8 · Iniciativa 8.1.3. Recorte demonstrativo das ações e etapas.',
-    metric: { name: 'Implementação do Plano de Gestão de Riscos', type: 'qualitative', qualitativeMode: 'stages', unit: '%', baseline: 0, reference: 'Cronograma de implantação do PGR', direction: 'up', targets: { 2026: 80, 2027: null, 2028: null, 2029: null, 2030: null }, formula: '% de etapas concluídas do cronograma' },
-    measurements: measurement(20), extras: {},
+    description: 'Estruturar a gestão de riscos da instituição com participação dos setores e capacitação dos gestores.',
+    source: 'PDI 2026–2030 · Eixo 8 · Iniciativa 8.1.3', reviewStatus: 'changes_requested', reviewNote: 'Detalhar o novo prazo da etapa atrasada.',
+    metric: { name: 'Etapas concluídas da elaboração', measurementMode: 'stages', valueType: 'percentage', unit: '%', periodicity: 'annual', baseline: 0, reference: 'Linha de base do PDI', direction: 'up', targets: { 2026: 80, 2027: 100, 2028: null, 2029: null, 2030: null }, formula: 'Etapas concluídas ÷ total de etapas × 100' },
+    measurements: [], extras: {},
     actions: [
-      action('comissao', 'Constituir a comissão de gestão de riscos', [task('setores', 'Definir os setores participantes', true, '2026-08-20'), task('membros', 'Solicitar a indicação dos membros', true, '2026-08-28'), task('minuta', 'Elaborar a minuta da portaria', false, '2026-09-05', 'A minuta aguarda a consolidação das contribuições da Reitoria.'), task('aprovacao', 'Encaminhar para aprovação', false, '2026-10-15'), task('publicacao', 'Publicar o ato de constituição', false, '2026-11-10')], 'SEPLAN', '2026-11-30'),
-      action('estrutura', 'Estabelecer a estrutura de gestão de riscos', [task('normas', 'Levantar normas e referências'), task('modelo', 'Propor o modelo de acompanhamento')]),
-      action('capacitacao', 'Capacitar gestores e lideranças', [task('publico', 'Definir o público e o conteúdo'), task('realizar', 'Realizar a capacitação')]),
-      action('politica', 'Divulgar a política de gestão de riscos', [task('comunicacao', 'Preparar a comunicação para os setores')]),
+      action('comissao', '8.1.3.1', 'Criar comissão para instituição do Plano de Gestão de Riscos', [
+        stage('setores', 'Definir os setores participantes', 'completed', '2026-08-20'),
+        stage('membros', 'Solicitar a indicação dos membros', 'completed', '2026-08-28'),
+        stage('minuta', 'Elaborar a minuta da portaria', 'in_progress', '2026-09-05', 'A minuta aguarda a consolidação das contribuições da Reitoria.'),
+        stage('aprovacao', 'Encaminhar para aprovação', 'not_started', '2026-10-15'),
+        stage('publicacao', 'Publicar o ato de constituição', 'not_started', '2026-11-10'),
+      ], 'SEPLAN', '2026-11-30'),
+      action('estrutura', '8.1.3.2', 'Estabelecer a Estrutura de Gestão de Riscos da UFCG', [stage('normas', 'Levantar normas e referências', 'not_started', '2026-10-30'), stage('modelo', 'Propor o modelo de acompanhamento', 'not_started', '2026-12-10')]),
+      action('capacitacao', '8.1.3.3', 'Capacitar Gestores e Lideranças da UFCG em Gestão de Riscos', [stage('publico', 'Definir o público e o conteúdo', 'not_started', '2026-10-20'), stage('realizar', 'Realizar a capacitação', 'not_started', '2026-12-05')]),
+      action('politica', '8.1.3.4', 'Difundir o conhecimento sobre a Política de Gestão de Riscos', [stage('comunicacao', 'Preparar a comunicação para os setores', 'not_started', '2026-12-15')]),
     ],
-    history: historical('Exemplo de acompanhamento iniciado com duas etapass concluídas e medição independente de 20%.'), risks: [
-      risk('risk-comissao', 'comissao', 'Definir os setores participantes', 'Definição inadequada dos setores que comporão a comissão', 2, 4, 'Mitigar', 'SEPLAN', { maturity: 'Mediano', cause: 'Falta de critérios técnicos para composição.', consequence: 'Comissão sem representatividade ou competência necessária.', category: 'Operacional', controls: 'Resolução CP 05/2023 sobre Política de Gestão de Riscos.' }),
-      risk('risk-membros', 'comissao', 'Solicitar a indicação dos membros', 'Indicações de servidores sem disponibilidade real', 4, 3, 'Mitigar', 'SEPLAN', { maturity: 'Fraco', cause: 'Sobrecarga de servidores indicados.', consequence: 'Comissão com baixa efetividade nos trabalhos.', controls: 'Solicitação formal aos setores.' }),
-      risk('risk-minuta', 'comissao', 'Elaborar a minuta da portaria', 'Conflitos de interesse na minuta de criação', 3, 3, 'Mitigar', 'SEPLAN', { maturity: 'Fraco', cause: 'Divergências entre setores sobre prioridades.', consequence: 'Atraso na criação da comissão.' }),
-      risk('risk-aprovacao', 'comissao', 'Encaminhar para aprovação', 'Atraso na aprovação pela Reitoria', 3, 3, 'Mitigar', 'Reitoria', { controlType: 'Detectivo', maturity: 'Mediano', controls: 'Tramitação no SEI.', consequence: 'Postergação dos trabalhos da comissão.' }),
-      risk('risk-publicacao', 'comissao', 'Publicar o ato de constituição', 'Atraso na publicação do ato de criação', 2, 3, 'Mitigar', 'Reitoria', { maturity: 'Mediano', controls: 'Fluxo padrão de publicação.' }),
-      risk('risk-normas', 'estrutura', 'Levantar normas e referências', 'Levantamento incompleto dos normativos relacionados', 3, 4, 'Mitigar', 'SEPLAN', { category: 'Político-legal', cause: 'Falta de capacitação em normativos de gestão de riscos.', consequence: 'Plano elaborado sobre base normativa frágil.', controls: 'Acesso aos normativos do TCU e CGU.' }),
-      risk('risk-modelo', 'estrutura', 'Propor o modelo de acompanhamento', 'Estudo superficial de modelos de outras instituições', 3, 4, 'Mitigar', 'SEPLAN', { cause: 'Tempo limitado para estudo aprofundado.', consequence: 'Plano sem aderência às melhores práticas.', controls: 'Materiais de IFES de referência.' }),
-      risk('risk-dados', 'estrutura', 'Levantar dados institucionais', 'Levantamento de dados institucionais insuficiente', 4, 4, 'Mitigar', 'SEPLAN', { category: 'Estratégico', maturity: 'Fraco', cause: 'Baixa colaboração dos setores.', consequence: 'Plano descolado da realidade institucional.', controls: 'Solicitações via SEI.' }),
-      risk('risk-minuta-plano', 'estrutura', 'Elaborar a minuta do plano', 'Minuta do plano não consensual', 3, 3, 'Mitigar', 'SEPLAN', { maturity: 'Mediano', cause: 'Divergências técnicas entre membros da comissão.', consequence: 'Atraso na conclusão do plano.' }),
-      risk('risk-publicizacao', 'estrutura', 'Aprovar e publicizar', 'Atraso na aprovação e publicização', 3, 4, 'Mitigar', 'SEPLAN', { category: 'Estratégico', controls: 'Fluxo padrão.', consequence: 'Não cumprimento da meta de 80% em 2026.' }),
-      risk('risk-publico', 'capacitacao', 'Definir o público e o conteúdo', 'Público-alvo das capacitações não mapeado', 3, 3, 'Mitigar', 'SEPLAN', { controls: 'Estrutura organizacional do SIORG.' }),
-      risk('risk-instrutores', 'capacitacao', 'Realizar a capacitação', 'Não conseguir articular instrutores qualificados', 4, 4, 'Mitigar', 'SEPLAN', { category: 'Financeiro/Orçamentário', cause: 'Limitação orçamentária.', consequence: 'Adiamento das turmas de capacitação.', controls: 'Articulação com ENAP e IFES.' }),
-      risk('risk-adesao', 'capacitacao', 'Realizar a capacitação', 'Baixa adesão dos gestores às capacitações', 4, 4, 'Mitigar', 'Reitoria', { category: 'Estratégico', controls: 'Convite institucional.' }),
-      risk('risk-material', 'politica', 'Preparar a comunicação para os setores', 'Material de divulgação inadequado ao público', 3, 3, 'Mitigar', 'ASCOM', { category: 'Imagem/Reputação', maturity: 'Mediano', controls: 'ASCOM atua na comunicação institucional.' }),
-    ],
+    history: history('Acompanhamento devolvido para complementação da etapa atrasada.', 'Responsável pelo Eixo'),
+    risks: [risk('risk-minuta', 'comissao', 'Elaborar a minuta da portaria', 'Atraso na consolidação da minuta de criação', 3, 3, 'SEPLAN')],
   },
   {
-    id: 'rankings', code: '8.1.9', axis: '8 · Governança e Gestão Institucional', objective: '8.1 · Aperfeiçoar Práticas de Governança Pública',
-    title: 'Ampliar a participação em rankings universitários', owner: 'SEPLAN', partners: 'SPE',
-    description: 'Aumentar a participação da UFCG em rankings universitários nacionais e internacionais.',
-    source: 'PDI 2026–2030 · Eixo 8 · Iniciativa 8.1.9. Título abreviado na navegação.',
-    metric: { name: 'Entrega do plano de participação em rankings', type: 'qualitative', qualitativeMode: 'boolean', unit: 'Sim/Não', baseline: null, reference: 'Entrega do plano orientador de inscrições', direction: 'up', targets: targets('Sim'), formula: 'Entrega do produto orientador no período' },
-    measurements: measurement('Sim'), extras: {},
-    actions: [action('mapear', 'Mapear rankings nacionais e internacionais', [task('lista', 'Consolidar a lista de rankings', true), task('criterios', 'Verificar os critérios de participação')]), action('inscrever', 'Realizar inscrições nos rankings selecionados', [task('dados', 'Reunir os dados institucionais'), task('envio', 'Enviar as inscrições')])],
-    history: historical('Registrada medição ilustrativa de três rankings em 2026.'), risks: [risk('risk-rankings', 'inscrever', 'Enviar as inscrições', 'Dados institucionais incompletos para a inscrição', 3, 3, 'Mitigar', 'SEPLAN')],
+    id: 'rankings', code: '8.1.9', axisId: 'pdi-axis-8', objectiveId: 'pdi-objective-8-1',
+    title: 'Aumentar a participação em rankings universitários nacionais e internacionais', owner: 'SEPLAN', partners: 'SPE',
+    description: 'Ampliar a presença institucional em rankings universitários nacionais e internacionais.',
+    source: 'PDI 2026–2030 · Eixo 8 · Iniciativa 8.1.9', reviewStatus: 'submitted', reviewNote: '',
+    metric: { name: 'Número de rankings com participação da UFCG', measurementMode: 'manual', valueType: 'number', unit: 'rankings', periodicity: 'annual', baseline: 2, reference: 'Linha de base do PDI', direction: 'up', targets: { 2026: 4, 2027: 4, 2028: 4, 2029: 4, 2030: 4 }, formula: 'Número de rankings com participação no período' },
+    measurements: measurement(2026, 3, 'Três participações registradas no período.'), extras: {},
+    actions: [
+      action('mapear', '8.1.9.1', 'Mapear os principais rankings universitários nacionais e internacionais', [stage('lista', 'Consolidar a lista de rankings', 'completed', '2026-08-30'), stage('criterios', 'Verificar os critérios de participação', 'in_progress', '2026-10-15')]),
+      action('inscrever', '8.1.9.2', 'Fazer inscrições nos principais rankings universitários', [stage('dados', 'Reunir os dados institucionais', 'not_started', '2026-11-10'), stage('envio', 'Enviar as inscrições', 'not_started', '2026-12-10')]),
+    ],
+    history: history('Resultado de 2026 registrado: 3 rankings.', 'Gestor do Eixo'), risks: [risk('risk-rankings', 'inscrever', 'Enviar as inscrições', 'Dados institucionais incompletos para a inscrição', 3, 3, 'SEPLAN')],
   },
   {
-    id: 'sustentabilidade', code: '8.2.3', axis: '8 · Governança e Gestão Institucional', objective: '8.2 · Aperfeiçoar Práticas de Gestão Institucional',
+    id: 'sustentabilidade', code: '8.2.3', axisId: 'pdi-axis-8', objectiveId: 'pdi-objective-8-2',
     title: 'Estabelecer práticas sustentáveis na UFCG', owner: 'SEPLAN', partners: 'PRGAF · Reitoria',
-    description: 'Estabelecer práticas sustentáveis e racionalizar gastos e processos administrativos, acompanhando a execução do PLS.',
-    source: 'PDI 2026–2030 · Eixo 8 · Iniciativa 8.2.3. O vínculo ao PLS é consultivo neste protótipo.',
-    metric: { name: 'Ações realizadas do PLS', unit: '%', baseline: 0, reference: 'Linha de base do PDI', direction: 'up', targets: { 2026: 20, 2027: 40, 2028: 60, 2029: 80, 2030: 100 }, formula: 'Ações realizadas no PLS ÷ total de ações previstas no PLS × 100' },
-    measurements: [], extras: {}, linkedPlan: 'pls',
-    actions: [action('monitorar', 'Monitorar a execução do PLS', [task('solicitar', 'Solicitar a atualização dos setores'), task('consolidar', 'Consolidar o acompanhamento')]), action('comite', 'Instituir um Comitê de Gestão Ambiental', [task('propor', 'Propor a composição do comitê')])],
-    history: historical('Criado vínculo de consulta com o PLS. Não há cálculo automático entre os planos.'), risks: [risk('risk-pls', 'monitorar', 'Consolidar o acompanhamento', 'Setores não enviarem as atualizações do PLS', 4, 3, 'Mitigar', 'SEPLAN')],
+    description: 'Articular as ações institucionais de sustentabilidade com o Plano de Logística Sustentável.',
+    source: 'PDI 2026–2030 · Eixo 8 · Iniciativa 8.2.3', reviewStatus: 'validated', reviewNote: '', linkedPlan: 'pls',
+    metric: { name: 'Ações integradas ao PLS', measurementMode: 'manual', valueType: 'percentage', unit: '%', periodicity: 'annual', baseline: 0, reference: 'Acompanhamento institucional', direction: 'up', targets: { 2026: 20, 2027: 40, 2028: 60, 2029: 80, 2030: 100 }, formula: 'Ações integradas ÷ ações previstas × 100' },
+    measurements: measurement(2026, 25, 'Integração inicial concluída.'), extras: {},
+    actions: [action('integrar', '8.2.3.1', 'Integrar o acompanhamento das práticas sustentáveis ao PLS', [stage('mapear-pls', 'Mapear iniciativas relacionadas', 'completed', '2026-07-30'), stage('vincular-pls', 'Validar os vínculos com o PLS', 'in_progress', '2026-10-30')])],
+    history: history('Vínculo com o PLS validado.'), risks: [],
   },
+];
+
+const plsAxes = [
+  { id: 'pls-axis-1', code: '1', name: 'Promoção da racionalização e do consumo consciente de bens e serviços', color: '#4c8c68', ownerUnit: 'SEPLAN', managerIds: ['dev-contributor'], reviewerIds: ['dev-reviewer'] },
+  { id: 'pls-axis-3', code: '3', name: 'Identificação dos objetos de menor impacto ambiental', color: '#7656a8', ownerUnit: 'PRGAF', managerIds: [], reviewerIds: ['dev-reviewer'] },
+  { id: 'pls-axis-7', code: '7', name: 'Qualidade de vida', color: '#d29b18', ownerUnit: 'SRH', managerIds: [], reviewerIds: ['dev-reviewer'] },
+];
+
+const plsObjectives = [
+  { id: 'pls-objective-1', axisId: 'pls-axis-1', code: '01', title: 'Reduzir o consumo de papel A4' },
+  { id: 'pls-objective-2', axisId: 'pls-axis-1', code: '02', title: 'Promover práticas sustentáveis nas compras e contratações' },
+  { id: 'pls-objective-11', axisId: 'pls-axis-3', code: '11', title: 'Incorporar critérios de menor impacto ambiental' },
+  { id: 'pls-objective-27', axisId: 'pls-axis-7', code: '27', title: 'Alocar o servidor conforme o seu perfil profissional' },
 ];
 
 const plsItems = [
   {
-    id: 'papel', code: '01', axis: '1 · Consumo consciente de bens e serviços', objective: '01 · Reduzir o consumo de papel A4',
-    title: 'Reduzir em 10% o consumo médio de papel A4', owner: 'PRGAF', partners: 'ASCOM · SEPLAN · Direções de centros',
-    description: 'Reduzir o consumo em relação à média de 2024–2025, com diagnóstico, campanhas e divulgação dos resultados.',
-    source: 'PLS 2025–2030 · Objetivo 01. Referência de 1.000 resmas e resultados são ilustrativos; a redução de 10% vem do plano.',
-    metric: { name: 'Consumo anual de papel A4', unit: 'resmas', baseline: 1000, reference: 'Média 2024–2025 · exemplo ilustrativo', direction: 'down', targets: targets(900), formula: 'Consumo anual ≤ média de 2024–2025 × 0,90', illustrative: true },
-    measurements: measurement(960), extras: {},
-    actions: [
-      action('estudo', 'Realizar estudo sobre o consumo de papel', [task('levantamento', 'Levantar o consumo dos setores', true), task('diagnostico', 'Consolidar o diagnóstico', true)], 'PRGAF', '2026-06-30'),
-      action('campanha', 'Realizar campanha de redução do consumo', [task('material', 'Preparar os materiais de divulgação'), task('divulgar', 'Divulgar a campanha nos centros')], 'PRGAF', '2030-12-31'),
-      action('divulgacao', 'Divulgar os dados anuais de consumo', [task('relatorio', 'Preparar o resumo anual de consumo')], 'PRGAF', '2026-12-31'),
-    ],
-    history: historical('Registrado consumo ilustrativo de 960 resmas. Meta ilustrativa de até 900 resmas.'), risks: [risk('risk-papel', 'estudo', 'Consolidar o diagnóstico', 'Dados de consumo não serem enviados pelos setores', 3, 4, 'Mitigar', 'PRGAF')],
+    id: 'papel', code: '01.1', axisId: 'pls-axis-1', objectiveId: 'pls-objective-1', title: 'Reduzir em 10% o consumo médio de papel A4 em relação à média 2024–2025', owner: 'PRGAF', partners: 'Direções de Centro', description: 'Acompanhar a redução do consumo institucional de papel A4.', source: 'PLS 2025–2030 · Objetivo 01', reviewStatus: 'validated', reviewNote: '',
+    metric: { name: 'Consumo anual de papel A4', measurementMode: 'manual', valueType: 'number', unit: 'resmas', periodicity: 'annual', baseline: 1000, reference: 'Média de consumo 2024–2025', direction: 'down', targets: { 2025: null, 2026: 900, 2027: 900, 2028: 900, 2029: 900, 2030: 900 }, formula: 'Consumo anual ≤ média 2024–2025 × 0,9' },
+    measurements: measurement(2026, 960, 'Consumo consolidado até o período.'), extras: {}, actions: [action('campanha', '01.1.1', 'Realizar campanha de consumo consciente', [stage('material', 'Preparar materiais de divulgação', 'completed', '2026-06-30'), stage('publicar', 'Publicar a campanha', 'in_progress', '2026-09-30')], 'PRGAF', '2026-10-30')], history: history('Resultado anual registrado.', 'PRGAF'), risks: [],
   },
   {
-    id: 'agua', code: '04', axis: '1 · Consumo consciente de bens e serviços', objective: '04 · Racionalizar o consumo de água',
-    title: 'Reduzir em 10% o consumo médio de água', owner: 'Prefeituras', partners: 'Direções de centros · SEPLAN',
-    description: 'Acompanhar o consumo per capita e promover o uso racional de água nos campi.',
-    source: 'PLS 2025–2030 · Objetivo 04. Valores absolutos e etapas são exemplos de demonstração.',
-    metric: { name: 'Consumo anual de água per capita', unit: 'm³/pessoa', baseline: 12, reference: 'Média 2024–2025 · exemplo ilustrativo', direction: 'down', targets: targets(10.8), formula: 'Consumo anual per capita ≤ média de 2024–2025 × 0,90', illustrative: true },
-    measurements: [], extras: {},
-    actions: [action('medidores', 'Ampliar a medição de consumo por edificação', [task('inventario', 'Identificar as edificações sem medição'), task('instalacao', 'Planejar a instalação dos medidores')], 'Prefeituras', '2027-12-31'), action('dadosagua', 'Divulgar os dados de consumo de água', [task('coletaagua', 'Organizar a coleta dos dados'), task('publicaragua', 'Publicar o acompanhamento')], 'Prefeituras', '2026-12-31')],
-    history: historical('Compromisso preparado para receber a primeira medição.'), risks: [risk('risk-agua', 'medidores', 'Planejar a instalação dos medidores', 'Indisponibilidade de recursos para instalar medidores', 3, 5, 'Mitigar', 'Prefeituras')],
+    id: 'politica-desfazimento', code: '02.1', axisId: 'pls-axis-1', objectiveId: 'pls-objective-2', title: 'Constituição de uma política de desfazimento de bens', owner: 'PRGAF', partners: 'SEPLAN', description: 'Construir e institucionalizar a política de desfazimento de bens da UFCG.', source: 'PLS 2025–2030 · Objetivo 02', reviewStatus: 'draft', reviewNote: '',
+    metric: { name: 'Etapas concluídas da Política', measurementMode: 'stages', valueType: 'percentage', unit: '%', periodicity: 'final', baseline: 0, reference: 'Plano de ação do PLS', direction: 'up', targets: { 2030: 100 }, formula: 'Etapas concluídas ÷ total de etapas previstas × 100' },
+    measurements: [], extras: {}, actions: [action('elaborar-politica', '02.1.1', 'Elaborar a política de desfazimento de bens', [stage('diagnostico', 'Realizar diagnóstico', 'completed', '2026-08-31'), stage('minuta-politica', 'Elaborar minuta da política', 'in_progress', '2026-12-15'), stage('aprovar-politica', 'Submeter a política para aprovação', 'not_started', '2027-06-30')], 'PRGAF', '2027-06-30')], history: history('Plano de ação iniciado.', 'PRGAF'), risks: [],
+  },
+  {
+    id: 'guia-compras', code: '11.1', axisId: 'pls-axis-3', objectiveId: 'pls-objective-11', title: 'Elaboração de um guia de orientação sobre compras e licitações sustentáveis', owner: 'PRGAF', partners: 'SEPLAN', description: 'Produzir o guia institucional com critérios técnicos e ambientais.', source: 'PLS 2025–2030 · Objetivo 11', reviewStatus: 'submitted', reviewNote: '',
+    metric: { name: 'Guia elaborado', measurementMode: 'delivery', valueType: 'status', unit: '', periodicity: 'final', baseline: 'not_started', reference: 'Entrega institucional prevista no PLS', direction: 'up', targets: { 2030: 'completed' }, completedValue: 'completed', formula: 'Situação da entrega validada pela área responsável' },
+    measurements: measurement(2030, 'in_progress', 'Conteúdo técnico em elaboração.'), extras: {}, actions: [action('produzir-guia', '11.1.1', 'Elaborar o guia de compras sustentáveis', [stage('criterios-guia', 'Mapear critérios e práticas', 'completed', '2026-08-31'), stage('redacao-guia', 'Redigir o guia', 'in_progress', '2026-12-15'), stage('validacao-guia', 'Validar e publicar o guia', 'not_started', '2027-06-30')], 'PRGAF', '2027-06-30')], history: history('Entrega enviada para acompanhamento.', 'PRGAF'), risks: [],
+  },
+  {
+    id: 'dimensionamento', code: '27.1', axisId: 'pls-axis-7', objectiveId: 'pls-objective-27', title: 'Aquisição e implementação de uma ferramenta de dimensionamento de postos de trabalho', owner: 'SRH', partners: 'STI · CASTA', description: 'Disponibilizar ferramenta para apoiar a alocação adequada de servidores.', source: 'PLS 2025–2030 · Objetivo 27', reviewStatus: 'draft', reviewNote: '',
+    metric: { name: 'Ferramenta criada e implementada', measurementMode: 'delivery', valueType: 'status', unit: '', periodicity: 'final', baseline: 'not_started', reference: 'Entrega prevista no PLS', direction: 'up', targets: { 2030: 'completed' }, completedValue: 'completed', formula: 'Situação da entrega validada pela área responsável' },
+    measurements: measurement(2030, 'not_started', 'Levantamento inicial ainda não concluído.'), extras: {}, actions: [action('ferramenta', '27.1.1', 'Desenvolver e implementar a ferramenta', [stage('mapear-postos', 'Mapear postos e perfis profissionais', 'not_started', '2026-12-31'), stage('desenvolver-ferramenta', 'Desenvolver a ferramenta', 'not_started', '2028-12-31'), stage('implantar-ferramenta', 'Implantar a ferramenta', 'not_started', '2030-12-31')], 'SRH', '2030-12-31')], history: history('Item incorporado ao acompanhamento do PLS.', 'SEPLAN'), risks: [],
   },
 ];
 
 export function initialState() {
-  const state = structuredClone({ version: 1, templates, plans: [
-    { id: 'pdi', type: 'PDI', shortName: 'PDI', name: 'Plano de Desenvolvimento Institucional', start: 2026, end: 2030, template: templates[0], items: pdiItems, created: false },
-    { id: 'pls', type: 'PLS', shortName: 'PLS', name: 'Plano de Logística Sustentável', start: 2025, end: 2030, template: templates[1], items: plsItems, created: false },
+  return structuredClone({ version: 2, templates, plans: [
+    { id: 'pdi', type: 'PDI', shortName: 'PDI', name: 'Plano de Desenvolvimento Institucional', start: 2026, end: 2030, status: 'published', template: templates[0], axes: pdiAxes, objectives: pdiObjectives, items: pdiItems },
+    { id: 'pls', type: 'PLS', shortName: 'PLS', name: 'Plano Diretor de Logística Sustentável', start: 2025, end: 2030, status: 'published', template: templates[1], axes: plsAxes, objectives: plsObjectives, items: plsItems },
   ] });
-  const axisColors = { '8 · Governança e Gestão Institucional': '#2f78a5', '1 · Consumo consciente de bens e serviços': '#4c8c68' };
-  state.plans.forEach((plan) => {
-    plan.axisColors = {};
-    plan.items.forEach((item) => {
-      item.axisColor = axisColors[item.axis] || '#2f78a5';
-      plan.axisColors[item.axis] = item.axisColor;
-      item.actions.forEach((currentAction, index) => { currentAction.code ||= `${item.code}.${index + 1}`; currentAction.tasks.forEach((currentTask) => { currentTask.deadline ||= currentAction.deadline; currentTask.justification ||= ''; }); });
-    });
-  });
-  return state;
 }

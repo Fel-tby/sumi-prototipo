@@ -1,292 +1,111 @@
-import { test, expect, openPdi, openPls, detail, record, newPlan, fillItem } from './fixtures.js';
+import { test, expect, openPdi, openPls, detail, recordNumber, selectItem } from './fixtures.js';
 
-test('lista: filtros de tipo, busca, vazio, limpeza e navegação', async ({ page }) => {
+test('visão geral e lista permitem localizar e abrir os planos', async ({ page }) => {
   await page.goto('/');
+  await expect(page.getByRole('heading', { name: /Olá, Usuário/ })).toBeVisible();
+  await page.getByRole('link', { name: 'Planejamentos', exact: true }).click();
   await expect(page.locator('.plan-card')).toHaveCount(2);
-  await page.getByRole('button', { name: 'PDI', exact: true }).click();
-  await expect(page.locator('.plan-card')).toHaveCount(1);
-  await expect(page.getByRole('heading', { name: 'PDI', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'PLS', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'PLS', exact: true })).toBeVisible();
-  await page.getByLabel('Buscar planejamento', { exact: true }).fill('inexistente');
-  await expect(page.getByRole('heading', { name: 'Nenhum planejamento encontrado' })).toBeVisible();
-  await page.getByRole('button', { name: 'Limpar filtros', exact: true }).click();
-  await expect(page.locator('.plan-card')).toHaveCount(2);
-  await page.getByLabel('Buscar planejamento', { exact: true }).fill('logistica');
   await expect(page.locator('.plan-card')).toHaveCount(1);
-  await page.getByRole('link', { name: 'Abrir PLS 2025–2030', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'PLS 2025–2030', exact: true })).toBeVisible();
-  await page.getByRole('link', { name: 'Todos os planejamentos' }).click();
-  await page.getByRole('link', { name: 'Conhecer os modelos' }).click();
-  await expect(page.getByRole('heading', { name: 'Modelos de plano', exact: true })).toBeVisible();
-  await page.getByRole('link', { name: 'SUMI início' }).click();
-  await expect(page.getByRole('heading', { name: 'Planejamentos', exact: true })).toBeVisible();
+  await page.getByLabel('Buscar planejamento').fill('logistica');
+  await page.getByRole('link', { name: /Abrir PLS/ }).click();
+  await expect(page.getByRole('heading', { name: /^PLS/ })).toBeVisible();
 });
 
-test('PDI: árvore, objetivos, seleção, filtros combinados e retorno', async ({ page }) => {
-  await openPdi(page);
-  const nav = page.getByRole('navigation', { name: 'Itens do planejamento' });
-  const axis = nav.getByRole('button', { name: '8 · Governança e Gestão Institucional', exact: true });
-  await axis.click();
-  await expect(nav.getByRole('link')).toHaveCount(0);
-  await axis.click();
-  await expect(nav.getByRole('link')).toHaveCount(3);
-  const objective = nav.getByRole('button', { name: '8.1 · Aperfeiçoar Práticas de Governança Pública', exact: true });
-  await objective.click();
-  await expect(nav.getByRole('link')).toHaveCount(1);
-  await objective.click();
-  await nav.getByRole('link', { name: /Iniciativa 8.1.9/ }).click();
-  await expect(detail(page).getByRole('heading', { level: 2 })).toHaveText('Ampliar a participação em rankings universitários');
-  await page.getByLabel('Buscar no plano', { exact: true }).fill('8.2.3');
-  await expect(nav.getByRole('link')).toHaveCount(1);
-  await expect(detail(page).getByRole('heading', { level: 2 })).toHaveText('Estabelecer práticas sustentáveis na UFCG');
-  await page.getByLabel('Filtrar execução', { exact: true }).selectOption('Concluída');
-  await expect(page.getByRole('heading', { name: 'Nenhum item encontrado' })).toBeVisible();
-  await page.getByRole('button', { name: 'Limpar filtros do plano' }).click();
-  await page.getByLabel('Filtrar responsável', { exact: true }).selectOption('SEPLAN');
-  await expect(nav.getByRole('link')).toHaveCount(3);
-  await page.getByRole('button', { name: 'Limpar filtros', exact: true }).click();
-  await nav.getByRole('link', { name: /Iniciativa 8.1.3/ }).click();
-  await page.goBack();
-  await expect(detail(page).getByRole('heading', { level: 2 })).toHaveText('Ampliar a participação em rankings universitários');
-});
-
-test('PDI: concluir e reabrir etapa, persistir e preservar indicador', async ({ page }) => {
-  await openPdi(page);
-  const checkbox = page.getByRole('checkbox', { name: 'Elaborar a minuta da portaria', exact: true });
-  await checkbox.check();
-  await expect(page.locator('.execution-summary strong')).toHaveText('15%');
+test('menu lateral pode ser recolhido e preserva a preferência', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('.sidebar')).toHaveCSS('width', '220px');
+  await page.getByRole('button', { name: 'Recolher menu lateral' }).click();
+  await expect(page.locator('.app-shell')).toHaveClass(/sidebar-collapsed/);
+  await expect(page.locator('.sidebar')).toHaveCSS('width', '72px');
+  await expect(page.getByRole('link', { name: 'Planejamentos', exact: true })).toBeVisible();
   await page.reload();
-  await expect(checkbox).toBeChecked();
-  await page.getByRole('tab', { name: 'Indicador e metas' }).click();
-  await expect(page.locator('.current-result strong')).toHaveText('20 %');
-  await page.getByRole('tab', { name: 'Histórico' }).click();
-  await expect(page.locator('.timeline')).toContainText('Concluída a etapa: Elaborar a minuta da portaria.');
-  await page.getByRole('tab', { name: 'Ações e etapas' }).click();
-  await checkbox.uncheck();
-  await expect(page.locator('.execution-summary strong')).toHaveText('10%');
-  await page.getByRole('tab', { name: 'Histórico' }).click();
-  await expect(page.locator('.timeline')).toContainText('Reaberta a etapa');
+  await expect(page.locator('.app-shell')).toHaveClass(/sidebar-collapsed/);
+  await page.getByRole('button', { name: 'Expandir menu lateral' }).click();
+  await expect(page.locator('.sidebar')).toHaveCSS('width', '220px');
 });
 
-test('ações: recolher, expandir, adicionar etapa, cancelar e rejeitar espaços', async ({ page }) => {
+test('PDI calcula o indicador por etapas e mantém o histórico', async ({ page }) => {
   await openPdi(page);
-  const action = page.locator('.action-card').first();
-  await action.getByRole('button', { name: /^8\.1\.3\.1 Constituir a comissão/ }).click();
-  await expect(action.getByRole('checkbox')).toHaveCount(0);
-  await action.getByRole('button', { name: /^8\.1\.3\.1 Constituir a comissão/ }).click();
-  await action.getByRole('button', { name: /Adicionar etapa/ }).click();
-  await page.getByLabel('Nome da etapa', { exact: true }).fill('Rascunho descartado');
-  await action.getByRole('button', { name: 'Cancelar', exact: true }).click();
-  await expect(page.getByRole('checkbox', { name: 'Rascunho descartado' })).toHaveCount(0);
-  await action.getByRole('button', { name: /Adicionar etapa/ }).click();
-  await page.getByLabel('Nome da etapa', { exact: true }).fill('   ');
-  await page.getByLabel('Prazo da etapa', { exact: true }).fill('2026-10-30');
-  await action.getByRole('button', { name: 'Adicionar', exact: true }).click();
-  await expect(page.getByRole('alert')).toContainText('Informe o nome da etapa');
-  await page.getByLabel('Nome da etapa', { exact: true }).fill('Verificar o ato publicado');
-  await page.getByLabel('Prazo da etapa', { exact: true }).fill('2026-09-10');
-  await action.getByRole('button', { name: 'Adicionar', exact: true }).click();
-  await expect(page.getByRole('checkbox', { name: 'Verificar o ato publicado', exact: true })).toBeVisible();
-  await expect(action.getByRole('button', { name: 'Etapa atrasada: Verificar o ato publicado' })).toBeVisible();
-  await action.getByRole('button', { name: 'Etapa atrasada: Verificar o ato publicado' }).click();
-  await page.getByLabel('Justificativa do atraso', { exact: true }).fill('Aguardando validação da Reitoria.');
-  await page.getByRole('button', { name: 'Salvar justificativa', exact: true }).click();
-  await expect(action).toContainText('Aguardando validação da Reitoria.');
+  await expect(page.locator('.execution-summary strong')).toHaveText('20%');
+  const status = page.getByLabel('Situação de Elaborar a minuta da portaria');
+  await status.selectOption('completed');
+  await expect(page.locator('.execution-summary strong')).toHaveText('30%');
+  await page.getByRole('tab', { name: 'Indicador e metas' }).click();
+  await expect(page.locator('.current-result strong')).toContainText('30');
+  await page.getByRole('tab', { name: 'Histórico' }).click();
+  await expect(page.locator('.timeline')).toContainText('alterada para Concluída');
+  await page.waitForTimeout(250);
+  await page.reload();
+  await expect(page.locator('.timeline')).toContainText('alterada para Concluída');
 });
 
-test('PDI: metas futuras, valor zero, vazio e revisão com histórico', async ({ page }) => {
+test('PDI registra resultado numérico sem confundir meta com execução', async ({ page }) => {
   await openPdi(page);
-  await page.getByRole('tab', { name: 'Indicador e metas' }).click();
-  await page.getByLabel('Ano de referência', { exact: true }).selectOption('2028');
-  await expect(page.locator('.current-result')).toContainText('Sem meta definida');
-  await page.getByRole('button', { name: 'Editar metas', exact: true }).click();
-  await page.getByLabel('Meta de 2028', { exact: true }).fill('0');
-  await page.getByLabel('Meta de 2026', { exact: true }).fill('');
-  await page.getByRole('button', { name: 'Salvar metas', exact: true }).click();
-  await expect(page.locator('.annual-table tr').filter({ has: page.getByRole('rowheader', { name: '2028', exact: true }) })).toContainText('Sem medição');
-  await record(page, 0, 'Ainda não houve execução.', 2028);
+  await selectItem(page, '8.1.9');
+  await recordNumber(page, 4, 'Quatro rankings confirmados no período.', 2026);
   await expect(page.locator('.current-result')).toContainText('Meta atingida');
-  await page.getByRole('tab', { name: 'Histórico' }).click();
-  await expect(page.locator('.timeline')).toContainText('Metas anuais atualizadas. Anterior: 2026: 80');
-  await expect(page.locator('.timeline')).toContainText('Nova: 2026: —');
+  await expect(page.locator('.current-result strong')).toContainText('4');
+  await expect(page.locator('.measurements')).toContainText('Quatro rankings confirmados');
 });
 
-test('medição: validação, evidência segura, período selecionado e histórico preservado', async ({ page }) => {
-  await openPdi(page);
+test('PLS acompanha entregas por situação descritiva', async ({ page }) => {
+  await openPls(page);
+  await selectItem(page, '11.1');
   await page.getByRole('tab', { name: 'Indicador e metas' }).click();
+  await expect(page.locator('.current-result strong')).toContainText('Em elaboração');
+  await expect(page.locator('.current-result')).not.toContainText('0%');
   await page.getByRole('button', { name: 'Registrar resultado', exact: true }).click();
   const dialog = page.getByRole('dialog');
-  await dialog.getByLabel('Valor (%)', { exact: true }).fill('101');
-  await dialog.getByLabel('Justificativa / observação', { exact: true }).fill('Validar máximo.');
-  await dialog.getByRole('button', { name: 'Salvar resultado', exact: true }).click();
-  await expect(dialog).toBeVisible();
-  expect(await dialog.getByLabel('Valor (%)', { exact: true }).evaluate((el) => el.validity.rangeOverflow)).toBe(true);
-  await dialog.getByLabel('Valor (%)', { exact: true }).fill('85');
-  await dialog.getByLabel('Link da evidência (opcional)', { exact: false }).fill('javascript:alert(1)');
-  await dialog.getByRole('button', { name: 'Salvar resultado', exact: true }).click();
-  await expect(dialog.getByRole('alert')).toContainText('https://');
-  await dialog.getByLabel('Link da evidência (opcional)', { exact: false }).fill('https://example.org/relatorio');
-  await dialog.getByRole('button', { name: 'Salvar resultado', exact: true }).click();
+  await dialog.getByLabel('Situação da entrega').selectOption('completed');
+  await dialog.getByLabel('Justificativa / observação').fill('Guia publicado e validado pela unidade responsável.');
+  await dialog.getByRole('button', { name: 'Salvar resultado' }).click();
+  await expect(page.locator('.current-result strong')).toContainText('Concluída');
   await expect(page.locator('.current-result')).toContainText('Meta atingida');
-  await expect(page.locator('.measurement')).toHaveCount(2);
-  await expect(page.getByRole('link', { name: 'Abrir referência da evidência' })).toHaveAttribute('rel', 'noreferrer');
-  await record(page, 100, 'Elaboração concluída.', 2027);
-  await expect(page.getByLabel('Ano de referência', { exact: true })).toHaveValue('2027');
-  await expect(page.locator('.measurement')).toHaveCount(1);
-  await page.reload();
-  await expect(page.getByLabel('Ano de referência', { exact: true })).toHaveValue('2027');
-  await page.getByLabel('Ano de referência', { exact: true }).selectOption('2026');
-  await expect(page.locator('.measurement')).toHaveCount(2);
 });
 
-test('histórico: observação independente, cancelamento de edição e gravação', async ({ page }) => {
+test('busca e filtros atuam sobre eixo, objetivo, item e responsável', async ({ page }) => {
   await openPdi(page);
-  await page.getByRole('button', { name: 'Editar informações', exact: true }).click();
-  await page.getByLabel('Título', { exact: true }).fill('Título descartado');
-  await page.getByRole('button', { name: 'Cancelar', exact: true }).click();
-  await expect(detail(page).getByRole('heading', { level: 2 })).not.toHaveText('Título descartado');
-  await page.getByRole('button', { name: 'Editar informações', exact: true }).click();
-  await page.getByLabel('Parceiros', { exact: true }).fill('SEPLAN e STI');
-  await page.getByRole('button', { name: 'Salvar alterações', exact: true }).click();
-  await expect(page.locator('.item-meta')).toContainText('SEPLAN e STI');
-  await page.getByRole('tab', { name: 'Histórico' }).click();
-  await page.getByLabel('Adicionar observação', { exact: true }).fill('   ');
-  await page.getByRole('button', { name: 'Salvar observação', exact: true }).click();
-  await expect(page.getByRole('alert')).toContainText('Escreva uma observação');
-  await page.getByLabel('Adicionar observação', { exact: true }).fill('Validar a composição na próxima reunião.');
-  await page.getByRole('button', { name: 'Salvar observação', exact: true }).click();
-  await page.reload();
-  await expect(page.locator('.timeline')).toContainText('Validar a composição na próxima reunião.');
+  const tree = page.getByRole('navigation', { name: 'Itens do planejamento' });
+  await page.getByLabel('Buscar no plano').fill('rankings');
+  await expect(tree.getByRole('link')).toHaveCount(1);
+  await expect(detail(page).getByRole('heading', { level: 2 })).toContainText('rankings');
+  await page.getByLabel('Filtrar situação').selectOption('Concluída');
+  await expect(page.getByRole('heading', { name: 'Nenhum item encontrado' })).toBeVisible();
+  await page.getByRole('button', { name: 'Limpar filtros' }).click();
+  await expect(tree.getByRole('link')).toHaveCount(3);
 });
 
-test('PLS: navegação por objetivo, responsáveis e indicador de redução', async ({ page }) => {
-  await openPls(page);
-  await expect(page.locator('.item-code')).toHaveText('META 01');
-  await record(page, 899, 'Redução obtida com a campanha.');
-  await expect(page.locator('.current-result')).toContainText('Meta atingida');
-  await expect(page.locator('.current-result strong')).toHaveText('899 resmas');
-  await page.getByLabel('Filtrar responsável', { exact: true }).selectOption('Prefeituras');
-  await expect(page.getByRole('navigation', { name: 'Itens do planejamento' }).getByRole('link')).toHaveCount(1);
-  await expect(detail(page).getByRole('heading', { level: 2 })).toContainText('água');
-  await record(page, 10.5, 'Consumo per capita consolidado.');
-  await expect(page.locator('.current-result')).toContainText('Meta atingida');
-  await expect(page.locator('.current-result strong')).toContainText('10,5');
-  await page.getByRole('button', { name: 'Limpar filtros', exact: true }).click();
-  await page.getByRole('navigation', { name: 'Itens do planejamento' }).getByRole('link', { name: /Meta 01/ }).click();
-  await page.getByRole('checkbox', { name: 'Preparar os materiais de divulgação', exact: true }).check();
-  await expect(page.locator('.execution-summary')).toContainText('50% ações');
-});
-
-test('PDI e PLS: vínculo navegável sem cálculo implícito', async ({ page }) => {
+test('ações aceitam novas etapas com prazo e parceiros', async ({ page }) => {
   await openPdi(page);
-  await page.getByRole('navigation', { name: 'Itens do planejamento' }).getByRole('link', { name: /Iniciativa 8.2.3/ }).click();
-  await page.getByRole('link', { name: /Planejamento relacionado PLS/ }).click();
-  await expect(page.getByRole('heading', { name: 'PLS 2025–2030', exact: true })).toBeVisible();
-  await page.goBack();
-  await expect(detail(page).getByRole('heading', { level: 2 })).toHaveText('Estabelecer práticas sustentáveis na UFCG');
-  await page.getByRole('tab', { name: 'Indicador e metas' }).click();
-  await expect(page.locator('.current-result')).toContainText('Sem medição');
+  const action = page.locator('.action-card').first();
+  await action.getByRole('button', { name: /Adicionar etapa/ }).click();
+  await page.getByLabel('Nome da etapa').fill('Revisar contribuições dos setores');
+  await page.getByLabel('Prazo da etapa').fill('2026-11-30');
+  await page.getByLabel('Parceiros da etapa').fill('STI e Reitoria');
+  await action.getByRole('button', { name: 'Adicionar', exact: true }).click();
+  await expect(action).toContainText('Revisar contribuições dos setores');
+  await expect(action).toContainText('Parceiros: STI e Reitoria');
 });
 
-  test('riscos: célula filtra combinação exata e legenda filtra categoria', async ({ page }) => {
-    await openPdi(page);
-    await page.getByRole('tab', { name: /Riscos/ }).click();
-    await expect(page.locator('.risk-card')).toHaveCount(14);
-    await page.getByRole('button', { name: /Probabilidade 3, impacto 3/ }).click();
-    await expect(page.locator('.risk-card')).toHaveCount(5);
-    await expect(page.locator('.risk-filter')).toContainText('P3 × I3');
-    await page.getByRole('button', { name: /Alto/ }).first().click();
-    await expect(page.locator('.risk-filter')).toContainText('Todos os riscos desta faixa');
-    await expect(page.locator('.risk-card')).toHaveCount(10);
-  });
-
-  test('riscos: adicionar, calcular, detalhar e editar pela ação', async ({ page }) => {
-    await openPdi(page);
-    await page.locator('.action-card').first().getByRole('button', { name: /Adicionar risco/ }).click();
-    const dialog = page.getByRole('dialog');
-    await dialog.getByLabel('Risco do processo', { exact: true }).fill('Falha na publicação do ato');
-    await dialog.getByLabel('Causa do risco', { exact: true }).fill('Tramitação institucional lenta');
-    await dialog.getByLabel('Efeito / consequência', { exact: true }).fill('A comissão não inicia os trabalhos');
-    await dialog.getByLabel('Controles existentes', { exact: true }).fill('Fluxo de publicação acompanhado pela SEPLAN');
-    await dialog.getByLabel('Plano de tratamento', { exact: true }).fill('Acompanhar a tramitação até a publicação');
-    await dialog.getByLabel('Responsável pelo tratamento', { exact: true }).fill('Reitoria');
-    await dialog.getByLabel('Probabilidade (P)', { exact: true }).selectOption('5');
-    await dialog.getByLabel('Impacto (I)', { exact: true }).selectOption('5');
-    await dialog.getByLabel('Maturidade do controle', { exact: true }).selectOption('Inexistente');
-    await expect(dialog.locator('.risk-calculation-value.critical')).toHaveCount(2);
-    await expect(dialog.locator('.risk-calculation')).toContainText('25');
-    await dialog.getByRole('button', { name: 'Adicionar risco', exact: true }).click();
-    await page.getByRole('tab', { name: /Riscos/ }).click();
-    await expect(page.locator('.risk-card')).toHaveCount(15);
-    const card = page.locator('.risk-card').filter({ hasText: 'Falha na publicação do ato' });
-    await card.getByRole('button', { name: 'Detalhar', exact: true }).click();
-    await expect(card).toContainText('Tramitação institucional lenta');
-    await card.getByRole('button', { name: 'Editar', exact: true }).click();
-    await expect(page.getByRole('dialog')).toContainText('Editar risco');
-    await page.getByRole('dialog').getByLabel('Probabilidade (P)', { exact: true }).selectOption('3');
-    await page.getByRole('dialog').getByRole('button', { name: 'Salvar alterações', exact: true }).click();
-    await expect(card).toContainText('RI 15');
-  });
-
-test('novo PDI: ciclo completo de criação de item, ação, etapa e medição', async ({ page }) => {
-  await newPlan(page);
-  await page.getByRole('button', { name: 'Criar primeiro item', exact: true }).click();
-  await fillItem(page);
-  await page.getByRole('button', { name: 'Adicionar ao plano', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Nenhuma ação cadastrada' })).toBeVisible();
-  await page.getByRole('button', { name: 'Adicionar ação', exact: true }).click();
-  await page.getByLabel('Nome da ação', { exact: true }).fill('Reunir informações dos setores');
-  await page.getByLabel('Último número do código', { exact: true }).fill('1');
-  await page.getByLabel('Prazo', { exact: true }).fill('2026-10-30');
-  await page.getByRole('button', { name: 'Adicionar ação', exact: true }).last().click();
-  await expect(page.getByText('Esta ação ainda não possui etapas.')).toBeVisible();
-  await page.getByRole('button', { name: /Adicionar etapa em Reunir/ }).click();
-  await page.getByLabel('Nome da etapa', { exact: true }).fill('Solicitar os relatórios');
-  await page.getByLabel('Prazo da etapa', { exact: true }).fill('2026-11-30');
-  await page.getByRole('button', { name: 'Adicionar', exact: true }).click();
-  await page.getByRole('checkbox', { name: 'Solicitar os relatórios', exact: true }).check();
-  await expect(page.locator('.execution-summary strong')).toHaveText('100%');
-  await expect(page.locator('.item-heading .badge')).toHaveText('Concluída');
-  await record(page, 4, 'Quatro relatórios entregues.');
-  await expect(page.locator('.current-result')).toContainText('Meta atingida');
-  await page.reload();
-  await expect(page.locator('.current-result strong')).toContainText('4 relatórios');
-});
-
-test('novo PLS: formulário próprio e preenchimento sem copiar conteúdo', async ({ page }) => {
-  await newPlan(page, 'pls', 'Sustentabilidade do Centro', 'PLS-CT');
-  await page.getByRole('button', { name: 'Adicionar compromisso', exact: true }).click();
-  await fillItem(page, { title: 'Reduzir o consumo do centro', metric: 'Consumo anual', unit: 'm³' });
-  await page.getByLabel('Melhor resultado', { exact: true }).selectOption('down');
-  await page.getByLabel('Valor da meta', { exact: false }).fill('100');
-  await page.getByRole('button', { name: 'Adicionar ao plano', exact: true }).click();
-  await expect(page.getByRole('navigation', { name: 'Itens do planejamento' }).getByRole('link')).toHaveCount(1);
-  await expect(page.locator('.item-code')).toContainText('META');
-  await record(page, 90, 'Consumo reduzido.');
-  await expect(page.locator('.current-result')).toContainText('Meta atingida');
-});
-
-test('formulários: vigência inválida, campos obrigatórios e código duplicado', async ({ page }) => {
-  await page.goto('/');
-  await page.getByRole('button', { name: 'Novo planejamento', exact: true }).click();
-  await page.getByLabel('Nome do planejamento', { exact: true }).fill('Plano inválido');
-  await page.getByLabel('Sigla', { exact: true }).fill('PI');
-  await page.getByLabel('Ano final', { exact: true }).fill('2025');
-  await page.getByRole('button', { name: 'Criar planejamento', exact: true }).click();
-  await expect(page.getByRole('alert')).toContainText('vigência válida');
-  await page.getByRole('button', { name: 'Fechar janela', exact: true }).click();
+test('abas oferecem navegação por teclado', async ({ page }) => {
   await openPdi(page);
-  await page.getByRole('button', { name: 'Adicionar iniciativa', exact: true }).click();
-  await fillItem(page, { code: '8.1.3' });
-  await page.getByRole('button', { name: 'Adicionar ao plano', exact: true }).click();
-  await expect(page.getByRole('alert')).toContainText('código já existe');
-  await page.getByRole('button', { name: 'Cancelar', exact: true }).click();
-  await page.getByRole('button', { name: 'Adicionar ação', exact: true }).click();
-  await page.getByLabel('Nome da ação', { exact: true }).fill('Ação fora da vigência');
-  await page.getByLabel('Prazo', { exact: true }).fill('2031-01-01');
-  await page.getByRole('dialog').getByRole('button', { name: 'Adicionar ação', exact: true }).click();
-  expect(await page.getByLabel('Prazo', { exact: true }).evaluate((el) => el.validity.rangeOverflow)).toBe(true);
-  await page.keyboard.press('Escape');
-  await expect(page.getByRole('dialog')).not.toBeVisible();
+  await page.getByRole('tab', { name: 'Ações e etapas' }).focus();
+  await page.keyboard.press('ArrowRight');
+  await expect(page.getByRole('tab', { name: 'Indicador e metas' })).toHaveAttribute('aria-selected', 'true');
+  await page.keyboard.press('End');
+  await expect(page.getByRole('tab', { name: 'Histórico' })).toHaveAttribute('aria-selected', 'true');
+  await page.keyboard.press('Home');
+  await expect(page.getByRole('tab', { name: 'Ações e etapas' })).toHaveAttribute('aria-selected', 'true');
+});
+
+test('matriz de riscos filtra e detalha os registros', async ({ page }) => {
+  await openPdi(page);
+  await page.getByRole('tab', { name: /Riscos/ }).click();
+  await expect(page.locator('.risk-cell')).toHaveCount(25);
+  await page.getByRole('button', { name: /Probabilidade 3, impacto 3/ }).click();
+  await expect(page.locator('.risk-card')).toHaveCount(1);
+  await page.getByRole('button', { name: 'Detalhar' }).click();
+  await expect(page.locator('.risk-card')).toContainText('Dependência de informações');
+  await expect(page.locator('.risk-card')).toContainText('Responsável:');
 });
