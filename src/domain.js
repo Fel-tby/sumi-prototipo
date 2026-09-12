@@ -4,11 +4,30 @@ export const years = (plan) => Array.from({ length: plan.end - plan.start + 1 },
 export const normalize = (value) => String(value).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 export const formatNumber = (value) => value == null ? '—' : new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 2 }).format(value);
 export const formatDate = (value) => new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short' }).format(new Date(value.length === 10 ? `${value}T12:00:00` : value));
+export const taskOverdue = (task, today = new Date()) => {
+  if (task.done || !task.deadline) return false;
+  const due = new Date(`${task.deadline}T23:59:59`);
+  return due < today;
+};
+export const actionProgress = (action) => {
+  const total = action.tasks.length;
+  const done = action.tasks.filter((task) => task.done).length;
+  return { total, done, percent: total ? Math.round(done / total * 100) : 0 };
+};
+export const executionProgress = (item) => {
+  const actions = item.actions;
+  const percent = actions.length ? Math.round(actions.reduce((sum, action) => sum + actionProgress(action).percent, 0) / actions.length) : 0;
+  return { total: actions.length, done: actions.filter((action) => actionProgress(action).percent === 100).length, percent };
+};
 export const taskProgress = (item) => {
   const tasks = item.actions.flatMap((action) => action.tasks);
   const done = tasks.filter((task) => task.done).length;
   return { total: tasks.length, done, percent: tasks.length ? Math.round(done / tasks.length * 100) : 0 };
 };
+export const metricType = (item) => item.metric.type || 'quantitative';
+export const metricMode = (item) => item.metric.qualitativeMode || 'boolean';
+export const metricResult = (item, year) => metricMode(item) === 'stages' ? taskProgress(item).percent : latestMeasurement(item, year)?.value;
+export const formatMetricValue = (item, value) => value == null || value === '' ? '—' : metricType(item) === 'qualitative' ? String(value) : formatNumber(value);
 export const executionStatus = (item) => {
   const { total, done } = taskProgress(item);
   return !total || !done ? 'Não iniciada' : done === total ? 'Concluída' : 'Em andamento';
@@ -16,17 +35,21 @@ export const executionStatus = (item) => {
 export const latestMeasurement = (item, year) => item.measurements.filter((entry) => entry.year === Number(year)).at(-1);
 export const metricStatus = (item, year) => {
   const target = item.metric.targets[year];
-  const measurement = latestMeasurement(item, year);
   if (target == null) return 'Sem meta definida';
-  if (!measurement) return 'Sem medição';
-  const reached = item.metric.direction === 'down' ? measurement.value <= target : measurement.value >= target;
+  const result = metricResult(item, year);
+  if (result == null || result === '') return 'Sem medição';
+  const reached = metricType(item) === 'qualitative'
+    ? metricMode(item) === 'stages' ? result >= Number(target) : normalize(result) === normalize(target)
+    : item.metric.direction === 'down' ? result <= target : result >= target;
   return reached ? 'Meta atingida' : 'Meta não atingida';
 };
 export const metricAchievement = (item, year) => {
   const target = item.metric.targets[year];
-  const measurement = latestMeasurement(item, year);
-  if (target == null || !measurement || (target === 0 && item.metric.direction === 'down')) return null;
-  const percent = item.metric.direction === 'down' ? target / measurement.value * 100 : measurement.value / target * 100;
+  const result = metricResult(item, year);
+  if (target == null || result == null || result === '') return null;
+  if (metricType(item) === 'qualitative' && metricMode(item) !== 'stages') return normalize(result) === normalize(target) ? 100 : 0;
+  if (target === 0 && item.metric.direction === 'down') return null;
+  const percent = item.metric.direction === 'down' ? target / Number(result) * 100 : Number(result) / target * 100;
   return percent == null ? null : Math.round(Math.min(percent, 100));
 };
 export const metricTone = (item, year) => {
@@ -56,6 +79,15 @@ export function restoreState(raw, fallback) {
     const value = JSON.parse(raw);
     const validTemplate = (t) => t && ['PDI', 'PLS'].includes(t.type) && t.labels?.item && Array.isArray(t.fields);
     if (value.version !== 1 || !Array.isArray(value.plans) || !value.plans.every((p) => p.id && validateRange(p.start, p.end) && validTemplate(p.template) && Array.isArray(p.items) && p.items.every((i) => i.metric?.targets && Array.isArray(i.actions) && i.actions.every((a) => Array.isArray(a.tasks)) && Array.isArray(i.measurements) && Array.isArray(i.history))) || !Array.isArray(value.templates) || !value.templates.every(validTemplate)) throw new Error();
+    const defaultAxisColor = '#2f78a5';
+    value.plans.forEach((plan) => {
+      plan.axisColors ||= {};
+      plan.items.forEach((item) => {
+        item.axisColor ||= plan.axisColors[item.axis] || defaultAxisColor;
+        plan.axisColors[item.axis] ||= item.axisColor;
+        item.actions.forEach((action, index) => { action.code ||= `${item.code}.${index + 1}`; action.tasks.forEach((task) => { task.deadline ||= action.deadline; task.justification ||= ''; }); });
+      });
+    });
     return { data: value, recovered: false };
   } catch { return { data: fallback(), recovered: true }; }
 }

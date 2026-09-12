@@ -55,7 +55,7 @@ test('PDI: concluir e reabrir etapa, persistir e preservar indicador', async ({ 
   await openPdi(page);
   const checkbox = page.getByRole('checkbox', { name: 'Elaborar a minuta da portaria', exact: true });
   await checkbox.check();
-  await expect(page.locator('.execution-summary strong')).toHaveText('30%');
+  await expect(page.locator('.execution-summary strong')).toHaveText('15%');
   await page.reload();
   await expect(checkbox).toBeChecked();
   await page.getByRole('tab', { name: 'Indicador e metas' }).click();
@@ -64,7 +64,7 @@ test('PDI: concluir e reabrir etapa, persistir e preservar indicador', async ({ 
   await expect(page.locator('.timeline')).toContainText('Concluída a etapa: Elaborar a minuta da portaria.');
   await page.getByRole('tab', { name: 'Ações e etapas' }).click();
   await checkbox.uncheck();
-  await expect(page.locator('.execution-summary strong')).toHaveText('20%');
+  await expect(page.locator('.execution-summary strong')).toHaveText('10%');
   await page.getByRole('tab', { name: 'Histórico' }).click();
   await expect(page.locator('.timeline')).toContainText('Reaberta a etapa');
 });
@@ -72,21 +72,27 @@ test('PDI: concluir e reabrir etapa, persistir e preservar indicador', async ({ 
 test('ações: recolher, expandir, adicionar etapa, cancelar e rejeitar espaços', async ({ page }) => {
   await openPdi(page);
   const action = page.locator('.action-card').first();
-  await action.getByRole('button', { name: /^01 Constituir a comissão/ }).click();
+  await action.getByRole('button', { name: /^8\.1\.3\.1 Constituir a comissão/ }).click();
   await expect(action.getByRole('checkbox')).toHaveCount(0);
-  await action.getByRole('button', { name: /^01 Constituir a comissão/ }).click();
+  await action.getByRole('button', { name: /^8\.1\.3\.1 Constituir a comissão/ }).click();
   await action.getByRole('button', { name: /Adicionar etapa/ }).click();
   await page.getByLabel('Nome da etapa', { exact: true }).fill('Rascunho descartado');
   await action.getByRole('button', { name: 'Cancelar', exact: true }).click();
   await expect(page.getByRole('checkbox', { name: 'Rascunho descartado' })).toHaveCount(0);
   await action.getByRole('button', { name: /Adicionar etapa/ }).click();
   await page.getByLabel('Nome da etapa', { exact: true }).fill('   ');
+  await page.getByLabel('Prazo da etapa', { exact: true }).fill('2026-10-30');
   await action.getByRole('button', { name: 'Adicionar', exact: true }).click();
   await expect(page.getByRole('alert')).toContainText('Informe o nome da etapa');
   await page.getByLabel('Nome da etapa', { exact: true }).fill('Verificar o ato publicado');
+  await page.getByLabel('Prazo da etapa', { exact: true }).fill('2026-09-10');
   await action.getByRole('button', { name: 'Adicionar', exact: true }).click();
   await expect(page.getByRole('checkbox', { name: 'Verificar o ato publicado', exact: true })).toBeVisible();
-  await expect(page.locator('.execution-summary')).toContainText('2/11 etapas');
+  await expect(action.getByRole('button', { name: 'Etapa atrasada: Verificar o ato publicado' })).toBeVisible();
+  await action.getByRole('button', { name: 'Etapa atrasada: Verificar o ato publicado' }).click();
+  await page.getByLabel('Justificativa do atraso', { exact: true }).fill('Aguardando validação da Reitoria.');
+  await page.getByRole('button', { name: 'Salvar justificativa', exact: true }).click();
+  await expect(action).toContainText('Aguardando validação da Reitoria.');
 });
 
 test('PDI: metas futuras, valor zero, vazio e revisão com histórico', async ({ page }) => {
@@ -156,7 +162,7 @@ test('histórico: observação independente, cancelamento de edição e gravaç�
 
 test('PLS: navegação por objetivo, responsáveis e indicador de redução', async ({ page }) => {
   await openPls(page);
-  await expect(page.locator('.item-code')).toHaveText('COMPROMISSO 01');
+  await expect(page.locator('.item-code')).toHaveText('META 01');
   await record(page, 899, 'Redução obtida com a campanha.');
   await expect(page.locator('.current-result')).toContainText('Meta atingida');
   await expect(page.locator('.current-result strong')).toHaveText('899 resmas');
@@ -167,9 +173,9 @@ test('PLS: navegação por objetivo, responsáveis e indicador de redução', as
   await expect(page.locator('.current-result')).toContainText('Meta atingida');
   await expect(page.locator('.current-result strong')).toContainText('10,5');
   await page.getByRole('button', { name: 'Limpar filtros', exact: true }).click();
-  await page.getByRole('navigation', { name: 'Itens do planejamento' }).getByRole('link', { name: /Compromisso 01/ }).click();
+  await page.getByRole('navigation', { name: 'Itens do planejamento' }).getByRole('link', { name: /Meta 01/ }).click();
   await page.getByRole('checkbox', { name: 'Preparar os materiais de divulgação', exact: true }).check();
-  await expect(page.locator('.execution-summary')).toContainText('3/5 etapas');
+  await expect(page.locator('.execution-summary')).toContainText('50% ações');
 });
 
 test('PDI e PLS: vínculo navegável sem cálculo implícito', async ({ page }) => {
@@ -231,11 +237,13 @@ test('novo PDI: ciclo completo de criação de item, ação, etapa e medição',
   await expect(page.getByRole('heading', { name: 'Nenhuma ação cadastrada' })).toBeVisible();
   await page.getByRole('button', { name: 'Adicionar ação', exact: true }).click();
   await page.getByLabel('Nome da ação', { exact: true }).fill('Reunir informações dos setores');
+  await page.getByLabel('Último número do código', { exact: true }).fill('1');
   await page.getByLabel('Prazo', { exact: true }).fill('2026-10-30');
   await page.getByRole('button', { name: 'Adicionar ação', exact: true }).last().click();
   await expect(page.getByText('Esta ação ainda não possui etapas.')).toBeVisible();
   await page.getByRole('button', { name: /Adicionar etapa em Reunir/ }).click();
   await page.getByLabel('Nome da etapa', { exact: true }).fill('Solicitar os relatórios');
+  await page.getByLabel('Prazo da etapa', { exact: true }).fill('2026-11-30');
   await page.getByRole('button', { name: 'Adicionar', exact: true }).click();
   await page.getByRole('checkbox', { name: 'Solicitar os relatórios', exact: true }).check();
   await expect(page.locator('.execution-summary strong')).toHaveText('100%');
@@ -254,7 +262,7 @@ test('novo PLS: formulário próprio e preenchimento sem copiar conteúdo', asyn
   await page.getByLabel('Valor da meta', { exact: false }).fill('100');
   await page.getByRole('button', { name: 'Adicionar ao plano', exact: true }).click();
   await expect(page.getByRole('navigation', { name: 'Itens do planejamento' }).getByRole('link')).toHaveCount(1);
-  await expect(page.locator('.item-code')).toContainText('COMPROMISSO');
+  await expect(page.locator('.item-code')).toContainText('META');
   await record(page, 90, 'Consumo reduzido.');
   await expect(page.locator('.current-result')).toContainText('Meta atingida');
 });

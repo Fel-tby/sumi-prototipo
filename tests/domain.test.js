@@ -1,14 +1,14 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { initialState } from '../src/data.js';
-import { createPlan, executionStatus, latestMeasurement, metricAchievement, metricStatus, metricTone, normalize, restoreState, riskLevel, riskLevelLabel, taskProgress, validateRange, years } from '../src/domain.js';
+import { createPlan, executionStatus, latestMeasurement, metricAchievement, metricStatus, metricTone, normalize, restoreState, riskLevel, riskLevelLabel, taskOverdue, taskProgress, validateRange, years } from '../src/domain.js';
 import { can, PERMISSIONS } from '../src/auth/permissions.js';
 import { normalizeSession } from '../src/auth/session-client.js';
 
 test('os dois planos possuem estruturas e exemplos distintos', () => {
   const state = initialState();
   assert.equal(state.plans[0].template.labels.item, 'Iniciativa');
-  assert.equal(state.plans[1].template.labels.item, 'Compromisso');
+  assert.equal(state.plans[1].template.labels.item, 'Meta');
   assert.equal(state.plans[0].items.length, 3);
   assert.equal(state.plans[1].items.length, 2);
   assert.equal(state.plans[0].items[2].linkedPlan, 'pls');
@@ -30,10 +30,17 @@ test('execução cobre os três estados e ação sem etapas', () => {
   item.actions[0].tasks[1].done = true;
   assert.equal(executionStatus(item), 'Concluída');
 });
+test('etapa atrasada depende do prazo e da conclusão', () => {
+  const today = new Date('2026-09-11T12:00:00');
+  assert.equal(taskOverdue({ deadline: '2026-09-10', done: false }, today), true);
+  assert.equal(taskOverdue({ deadline: '2026-09-11', done: false }, today), false);
+  assert.equal(taskOverdue({ deadline: '2026-09-10', done: true }, today), false);
+  assert.equal(taskOverdue({ deadline: '', done: false }, today), false);
+});
 test('meta zero, meta ausente, sem medição e sentido de melhoria', () => {
   const item = initialState().plans[0].items[0];
   assert.equal(metricStatus(item, 2028), 'Sem meta definida');
-  assert.equal(metricStatus(item, 2027), 'Sem medição');
+  assert.equal(metricStatus(item, 2027), 'Sem meta definida');
   assert.equal(metricStatus(item, 2026), 'Meta não atingida');
   item.metric.targets[2026] = 0;
   item.measurements.push({ year: 2026, value: 0 });
@@ -43,6 +50,16 @@ test('meta zero, meta ausente, sem medição e sentido de melhoria', () => {
   assert.equal(metricStatus(paper, 2026), 'Meta atingida');
   paper.measurements.push({ year: 2026, value: 901 });
   assert.equal(metricStatus(paper, 2026), 'Meta não atingida');
+});
+test('indicadores qualitativos avaliam entrega Sim/Não e execução por etapas', () => {
+  const product = { metric: { type: 'qualitative', qualitativeMode: 'boolean', targets: { 2026: 'Sim' } }, measurements: [{ year: 2026, value: 'Sim' }], actions: [] };
+  assert.equal(metricStatus(product, 2026), 'Meta atingida');
+  assert.equal(metricAchievement(product, 2026), 100);
+  product.measurements[0].value = 'Não';
+  assert.equal(metricStatus(product, 2026), 'Meta não atingida');
+  const staged = { metric: { type: 'qualitative', qualitativeMode: 'stages', targets: { 2026: 50 } }, measurements: [], actions: [{ tasks: [{ done: true }, { done: false }] }] };
+  assert.equal(metricStatus(staged, 2026), 'Meta atingida');
+  assert.equal(metricAchievement(staged, 2026), 100);
 });
 test('metas e matriz produzem classificações visuais', () => {
   const state = initialState();
@@ -67,7 +84,7 @@ test('novos planos copiam os modelos e não os exemplos', () => {
   assert.equal(plan.items.length, 0);
   assert.equal(plan.name, 'Plano local');
   template.labels.item = 'Entrega';
-  assert.equal(plan.template.labels.item, 'Compromisso');
+  assert.equal(plan.template.labels.item, 'Meta');
   assert.throws(() => createPlan(template, { name: ' ', shortName: 'X', start: 2026, end: 2030 }));
 });
 test('dados locais válidos sobrevivem e inválidos são restaurados', () => {

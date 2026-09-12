@@ -1,6 +1,17 @@
 import React, { useState } from 'react';
 import { Button, Field, FormEnd, Icon, Modal } from './ui.jsx';
-import { controlFactor, createPlan, historyEntry, normalize, residualRisk, riskLevel, riskLevelFromScore, riskLevelLabel, riskScore, uid, years } from './domain.js';
+import { controlFactor, createPlan, historyEntry, normalize, residualRisk, riskLevel, riskLevelFromScore, riskLevelLabel, riskScore, taskProgress, uid, years } from './domain.js';
+
+const axisPalette = [
+  ['Azul claro', '#8ecae6'], ['Azul', '#2f78a5'], ['Azul escuro', '#174a6b'],
+  ['Verde claro', '#9bcf9b'], ['Verde', '#4c8c68'], ['Verde escuro', '#24583d'],
+  ['Amarelo claro', '#f4d35e'], ['Amarelo', '#d29b18'], ['Laranja', '#d97735'],
+  ['Vermelho', '#b94a48'], ['Roxo', '#7656a8'], ['Cinza', '#718096'],
+];
+
+function AxisColorPicker({ value }) {
+  return <div className="axis-palette" role="radiogroup" aria-label="Cor do eixo">{axisPalette.map(([name, color]) => <label key={color} title={name}><input type="radio" name="axisColor" value={color} defaultChecked={value === color} aria-label={name} /><span style={{ backgroundColor: color }} /></label>)}</div>;
+}
 
 export function PlanForm({ templates, initialTemplate = 'pdi', onClose, onSave }) {
   const [templateId, setTemplateId] = useState(initialTemplate);
@@ -64,6 +75,8 @@ function ExtraFields({ fields, item }) {
 
 export function ItemForm({ plan, item, onClose, onSave }) {
   const [error, setError] = useState('');
+  const [metricType, setMetricType] = useState('quantitative');
+  const [qualitativeMode, setQualitativeMode] = useState('boolean');
   const label = plan.template.labels;
   function submit(event) {
     event.preventDefault();
@@ -71,24 +84,26 @@ export function ItemForm({ plan, item, onClose, onSave }) {
     if (['title', 'owner', 'axis', 'objective', 'code'].some((key) => !values[key].trim())) return setError('Preencha os campos obrigatórios com conteúdo.');
     if (plan.items.some((i) => i.id !== item?.id && normalize(i.code) === normalize(values.code.trim()))) return setError('Este código já existe neste planejamento.');
     const extras = Object.fromEntries(plan.template.fields.map((f) => [f.id, values[`extra-${f.id}`] || '']));
-    const details = { title: values.title.trim(), owner: values.owner.trim(), axis: values.axis.trim(), objective: values.objective.trim(), code: values.code.trim(), description: values.description.trim(), partners: values.partners.trim(), extras };
+    const details = { title: values.title.trim(), owner: values.owner.trim(), axis: values.axis.trim(), axisColor: values.axisColor, objective: values.objective.trim(), code: values.code.trim(), description: values.description.trim(), partners: values.partners.trim(), extras };
     if (item) return onSave({ ...item, ...details, history: [...item.history, historyEntry('Informações do item atualizadas.')] });
     if (!values.metric.trim() || !values.unit.trim()) return setError('Informe o indicador e sua unidade.');
     const metricTargets = Object.fromEntries(years(plan).map((y) => [y, null]));
-    metricTargets[values.targetYear] = values.target === '' ? null : Number(values.target);
-    onSave({ ...details, id: uid(), metric: { name: values.metric.trim(), unit: values.unit.trim(), baseline: values.baseline === '' ? null : Number(values.baseline), reference: 'Referência informada no protótipo', direction: values.direction, targets: metricTargets, formula: 'Valor informado no acompanhamento anual' }, actions: [], measurements: [], history: [historyEntry('Item criado no planejamento.')], source: 'Conteúdo criado localmente na demonstração.' });
+    metricTargets[values.targetYear] = metricType === 'quantitative' ? (values.target === '' ? null : Number(values.target)) : qualitativeMode === 'stages' ? (values.target === '' ? null : Number(values.target)) : values.target;
+    onSave({ ...details, id: uid(), metric: { name: values.metric.trim(), type: metricType, qualitativeMode: metricType === 'qualitative' ? qualitativeMode : undefined, unit: metricType === 'quantitative' ? values.unit.trim() : qualitativeMode === 'stages' ? '%' : 'Sim/Não', baseline: metricType === 'quantitative' && values.baseline !== '' ? Number(values.baseline) : null, reference: 'Referência informada no protótipo', direction: values.direction, targets: metricTargets, formula: metricType === 'qualitative' && qualitativeMode === 'stages' ? '% de etapas concluídas' : 'Resultado informado no acompanhamento anual' }, actions: [], measurements: [], history: [historyEntry('Item criado no planejamento.')], source: 'Conteúdo criado localmente na demonstração.' });
   }
   return <Modal title={item ? 'Editar informações' : `Adicionar ${label.item.toLowerCase()}`} onClose={onClose} wide>
     <form onSubmit={submit}><div className="form-body">
       <div className="form-grid"><Field label={label.axis}><input name="axis" list="existing-axes" required maxLength={160} defaultValue={item?.axis || plan.items[0]?.axis || ''} /></Field><Field label={label.objective}><input name="objective" list="existing-objectives" required maxLength={160} defaultValue={item?.objective || ''} /></Field></div>
+      <Field label="Cor do eixo" help="A cor aparece apenas nos detalhes visuais do plano."><AxisColorPicker value={item?.axisColor || plan.axisColors?.[item?.axis || plan.items[0]?.axis] || '#2f78a5'} /></Field>
       <datalist id="existing-axes">{[...new Set(plan.items.map((i) => i.axis))].map((a) => <option key={a} value={a} />)}</datalist><datalist id="existing-objectives">{[...new Set(plan.items.map((i) => i.objective))].map((o) => <option key={o} value={o} />)}</datalist>
       <div className="form-grid code-title"><Field label="Código"><input name="code" required maxLength={24} defaultValue={item?.code || ''} placeholder="Ex.: 1.1.1" /></Field><Field label="Título"><input name="title" required maxLength={180} defaultValue={item?.title || ''} /></Field></div>
       <Field label="Descrição"><textarea name="description" rows="2" maxLength={2000} defaultValue={item?.description || ''} /></Field>
       <div className="form-grid"><Field label="Unidade responsável"><input name="owner" required maxLength={80} defaultValue={item?.owner || ''} placeholder="Ex.: SEPLAN" /></Field><Field label="Parceiros"><input name="partners" maxLength={150} defaultValue={item?.partners || ''} /></Field></div>
       <ExtraFields fields={plan.template.fields} item={item} />
-      {!item && <><div className="section-divider" /><h3>Indicador e meta inicial</h3><Field label="Nome do indicador"><input name="metric" required maxLength={160} /></Field>
-        <div className="form-grid three"><Field label="Unidade"><input name="unit" required maxLength={24} placeholder="%, relatórios, m³…" /></Field><Field label="Melhor resultado"><select name="direction"><option value="up">Quanto maior, melhor</option><option value="down">Quanto menor, melhor</option></select></Field><Field label="Linha de base"><input name="baseline" type="number" step="any" min="0" /></Field></div>
-        <div className="form-grid"><Field label="Ano da meta"><select name="targetYear" defaultValue={Math.max(plan.start, Math.min(2026, plan.end))}>{years(plan).map((y) => <option key={y}>{y}</option>)}</select></Field><Field label="Valor da meta" help="Deixe vazio quando ainda não houver uma meta definida."><input name="target" type="number" step="any" min="0" /></Field></div></>}
+      {!item && <><div className="section-divider" /><h3>Indicador e meta inicial</h3><Field label="Tipo de indicador"><select name="metricType" value={metricType} onChange={(event) => setMetricType(event.target.value)}><option value="quantitative">Quantitativo (número ou percentual)</option><option value="qualitative">Qualitativo (produto, norma ou etapas)</option></select></Field>{metricType === 'qualitative' && <Field label="Forma de acompanhamento"><select name="qualitativeMode" value={qualitativeMode} onChange={(event) => setQualitativeMode(event.target.value)}><option value="boolean">Entrega de produto (Sim/Não)</option><option value="stages">Implementação por etapas (%)</option></select></Field>}<Field label="Nome do indicador"><input name="metric" required maxLength={160} placeholder={metricType === 'qualitative' ? 'Ex.: Plano institucional elaborado' : undefined} /></Field>
+        {metricType === 'quantitative' && <div className="form-grid three"><Field label="Unidade"><input name="unit" required maxLength={24} placeholder="%, relatórios, m³…" /></Field><Field label="Melhor resultado"><select name="direction"><option value="up">Quanto maior, melhor</option><option value="down">Quanto menor, melhor</option></select></Field><Field label="Linha de base"><input name="baseline" type="number" step="any" min="0" /></Field></div>}
+        {metricType === 'qualitative' && qualitativeMode === 'boolean' && <Field label="Resultado esperado"><select name="target"><option value="Sim">Sim</option><option value="Não">Não</option></select></Field>}
+        <div className="form-grid"><Field label="Ano da meta"><select name="targetYear" defaultValue={Math.max(plan.start, Math.min(2026, plan.end))}>{years(plan).map((y) => <option key={y}>{y}</option>)}</select></Field>{(metricType === 'quantitative' || qualitativeMode === 'stages') && <Field label={qualitativeMode === 'stages' ? 'Meta de conclusão (%)' : 'Valor da meta'} help="Deixe vazio quando ainda não houver uma meta definida."><input name="target" type="number" step="any" min="0" max={qualitativeMode === 'stages' ? 100 : undefined} /></Field>}</div></>}
     </div><FormEnd onClose={onClose} submit={item ? 'Salvar alterações' : 'Adicionar ao plano'} error={error} /></form>
   </Modal>;
 }
@@ -99,9 +114,12 @@ export function ActionForm({ plan, item, onClose, onSave }) {
     event.preventDefault();
     const values = Object.fromEntries(new FormData(event.currentTarget));
     if (!values.title.trim() || !values.owner.trim()) return setError('Informe a ação e a unidade responsável.');
-    onSave({ id: uid(), title: values.title.trim(), owner: values.owner.trim(), deadline: values.deadline, tasks: [] });
+    if (!/^\d+$/.test(values.codeSuffix.trim())) return setError('Informe o último número do código da ação.');
+    const code = `${item.code}.${values.codeSuffix.trim()}`;
+    if (item.actions.some((action) => normalize(action.code) === normalize(code))) return setError('Este código já existe nesta iniciativa.');
+    onSave({ id: uid(), code, title: values.title.trim(), owner: values.owner.trim(), deadline: values.deadline, tasks: [] });
   }
-  return <Modal title="Adicionar ação" onClose={onClose}><form onSubmit={submit}><div className="form-body"><Field label="Nome da ação"><input name="title" required maxLength={180} autoFocus /></Field><Field label="Unidade responsável"><input name="owner" required defaultValue={item.owner} maxLength={80} /></Field><Field label="Prazo"><input name="deadline" type="date" min={`${plan.start}-01-01`} max={`${plan.end}-12-31`} required /></Field></div><FormEnd onClose={onClose} submit="Adicionar ação" error={error} /></form></Modal>;
+  return <Modal title="Adicionar ação" subtitle={`Iniciativa ${item.code}`} onClose={onClose}><form onSubmit={submit}><div className="form-body"><Field label="Código da ação" help="O código da iniciativa já está preenchido; informe apenas o último número."><div className="code-input"><span>{item.code}.</span><input name="codeSuffix" required inputMode="numeric" pattern="[0-9]+" maxLength={6} aria-label="Último número do código" /></div></Field><Field label="Nome da ação"><input name="title" required maxLength={180} autoFocus /></Field><Field label="Unidade responsável"><input name="owner" required defaultValue={item.owner} maxLength={80} /></Field><Field label="Prazo"><input name="deadline" type="date" min={`${plan.start}-01-01`} max={`${plan.end}-12-31`} required /></Field></div><FormEnd onClose={onClose} submit="Adicionar ação" error={error} /></form></Modal>;
 }
 
 export function RiskForm({ item, action, risk, onClose, onSave }) {
@@ -144,10 +162,10 @@ export function MeasurementForm({ plan, item, year, onClose, onSave }) {
       try { if (!['https:', 'http:'].includes(new URL(values.evidence).protocol)) throw new Error(); }
       catch { return setError('Use um endereço de evidência iniciado por https:// ou http://.'); }
     }
-    onSave({ id: uid(), year: Number(values.year), value: Number(values.value), note: values.note.trim(), evidence: values.evidence.trim(), at: new Date().toISOString() });
+    onSave({ id: uid(), year: Number(values.year), value: item.metric.type === 'qualitative' ? values.value : Number(values.value), note: values.note.trim(), evidence: values.evidence.trim(), at: new Date().toISOString() });
   }
   return <Modal title="Registrar resultado" subtitle={item.metric.name} onClose={onClose}><form onSubmit={submit}><div className="form-body">
-    <div className="form-grid"><Field label="Ano do resultado"><select name="year" defaultValue={year}>{years(plan).map((y) => <option key={y}>{y}</option>)}</select></Field><Field label={`Valor (${item.metric.unit})`}><input autoFocus name="value" type="number" min="0" max={item.metric.unit === '%' ? 100 : undefined} step="any" required /></Field></div>
+    <div className="form-grid"><Field label="Ano do resultado"><select name="year" defaultValue={year}>{years(plan).map((y) => <option key={y}>{y}</option>)}</select></Field>{item.metric.type === 'qualitative' ? <Field label="Resultado"><select autoFocus name="value" defaultValue="Sim" required>{item.metric.qualitativeMode === 'boolean' ? <><option>Sim</option><option>Não</option></> : <option value={taskProgress(item).percent}>{taskProgress(item).percent}% de etapas concluídas</option>}</select></Field> : <Field label={`Valor (${item.metric.unit})`}><input autoFocus name="value" type="number" min="0" max={item.metric.unit === '%' ? 100 : undefined} step="any" required /></Field>}</div>
     <Field label="Justificativa / observação"><textarea name="note" rows="3" required maxLength={2000} placeholder="Descreva o resultado e o contexto da medição." /></Field>
     <Field label="Link da evidência (opcional)" help="Somente a referência é salva; nenhum arquivo é enviado."><input name="evidence" type="url" maxLength={2000} placeholder="https://…" /></Field>
     <p className="hint">Consolidado anual. Um novo registro atualiza o valor exibido e preserva as medições anteriores no histórico.</p>
@@ -158,10 +176,11 @@ export function TargetsForm({ plan, item, onClose, onSave }) {
   function submit(event) {
     event.preventDefault();
     const values = Object.fromEntries(new FormData(event.currentTarget));
-    onSave(Object.fromEntries(years(plan).map((year) => [year, values[year] === '' ? null : Number(values[year])])));
+    const qualitativeBoolean = item.metric.type === 'qualitative' && item.metric.qualitativeMode === 'boolean';
+    onSave(Object.fromEntries(years(plan).map((year) => [year, values[year] === '' ? null : qualitativeBoolean ? values[year] : Number(values[year])] )));
   }
   return <Modal title="Editar metas anuais" subtitle={`${item.metric.name} · ${item.metric.unit}`} onClose={onClose}><form onSubmit={submit}><div className="form-body">
     <p className="hint">Campo vazio significa sem meta definida; zero é uma meta de valor zero. Alterações são registradas no histórico local.</p>
-    <div className="form-grid three">{years(plan).map((year) => <Field key={year} label={`Meta de ${year}`}><input name={year} type="number" min="0" max={item.metric.unit === '%' ? 100 : undefined} step="any" defaultValue={item.metric.targets[year] ?? ''} /></Field>)}</div>
+    <div className="form-grid three">{years(plan).map((year) => <Field key={year} label={`Meta de ${year}`}>{item.metric.type === 'qualitative' && item.metric.qualitativeMode === 'boolean' ? <select name={year} defaultValue={item.metric.targets[year] ?? ''}><option value="">Sem meta definida</option><option>Sim</option><option>Não</option></select> : <input name={year} type="number" min="0" max={item.metric.unit === '%' ? 100 : undefined} step="any" defaultValue={item.metric.targets[year] ?? ''} />}</Field>)}</div>
   </div><FormEnd onClose={onClose} submit="Salvar metas" /></form></Modal>;
 }

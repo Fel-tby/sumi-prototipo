@@ -1,4 +1,4 @@
-const task = (id, title, done = false) => ({ id, title, done });
+const task = (id, title, done = false, deadline = '', justification = '') => ({ id, title, done, deadline, justification });
 const action = (id, title, tasks, owner = 'SEPLAN', deadline = '2026-12-15') => ({ id, title, tasks, owner, deadline });
 const historical = (text) => [{ id: 'initial', at: '2026-08-27T14:30:00-03:00', text, actor: 'Dados demonstrativos' }];
 const measurement = (value) => [{ id: 'initial', value, year: 2026, note: 'Medição ilustrativa para demonstração do fluxo.', at: '2026-08-27T14:30:00-03:00', evidence: '' }];
@@ -7,7 +7,7 @@ const risk = (id, actionId, stage, title, probability, impact, response, owner, 
 
 export const templates = [
   { id: 'pdi', type: 'PDI', name: 'Desenvolvimento institucional', version: 1, description: 'Objetivos, iniciativas e metas anuais para acompanhar a estratégia institucional.', labels: { axis: 'Eixo', objective: 'Objetivo', item: 'Iniciativa' }, fields: [] },
-  { id: 'pls', type: 'PLS', name: 'Logística sustentável', version: 1, description: 'Compromissos de sustentabilidade, indicadores e ações com prazos.', labels: { axis: 'Eixo', objective: 'Objetivo', item: 'Compromisso' }, fields: [] },
+  { id: 'pls', type: 'PLS', name: 'Logística sustentável', version: 1, description: 'Compromissos de sustentabilidade, indicadores e ações com prazos.', labels: { axis: 'Eixo', objective: 'Objetivo', item: 'Meta' }, fields: [] },
 ];
 
 const pdiItems = [
@@ -16,10 +16,10 @@ const pdiItems = [
     title: 'Elaborar o Plano de Gestão de Riscos da UFCG', owner: 'SEPLAN', partners: 'Setores da UFCG',
     description: 'Estruturar a gestão de riscos da instituição, com participação dos setores e capacitação dos gestores.',
     source: 'PDI 2026–2030 · Eixo 8 · Iniciativa 8.1.3. Recorte demonstrativo das ações e etapas.',
-    metric: { name: 'Etapas concluídas da elaboração', unit: '%', baseline: 0, reference: 'Linha de base do PDI', direction: 'up', targets: { 2026: 80, 2027: 100, 2028: null, 2029: null, 2030: null }, formula: 'Etapas concluídas ÷ total de etapas × 100' },
+    metric: { name: 'Implementação do Plano de Gestão de Riscos', type: 'qualitative', qualitativeMode: 'stages', unit: '%', baseline: 0, reference: 'Cronograma de implantação do PGR', direction: 'up', targets: { 2026: 80, 2027: null, 2028: null, 2029: null, 2030: null }, formula: '% de etapas concluídas do cronograma' },
     measurements: measurement(20), extras: {},
     actions: [
-      action('comissao', 'Constituir a comissão de gestão de riscos', [task('setores', 'Definir os setores participantes', true), task('membros', 'Solicitar a indicação dos membros', true), task('minuta', 'Elaborar a minuta da portaria'), task('aprovacao', 'Encaminhar para aprovação'), task('publicacao', 'Publicar o ato de constituição')], 'SEPLAN', '2026-09-30'),
+      action('comissao', 'Constituir a comissão de gestão de riscos', [task('setores', 'Definir os setores participantes', true, '2026-08-20'), task('membros', 'Solicitar a indicação dos membros', true, '2026-08-28'), task('minuta', 'Elaborar a minuta da portaria', false, '2026-09-05', 'A minuta aguarda a consolidação das contribuições da Reitoria.'), task('aprovacao', 'Encaminhar para aprovação', false, '2026-10-15'), task('publicacao', 'Publicar o ato de constituição', false, '2026-11-10')], 'SEPLAN', '2026-11-30'),
       action('estrutura', 'Estabelecer a estrutura de gestão de riscos', [task('normas', 'Levantar normas e referências'), task('modelo', 'Propor o modelo de acompanhamento')]),
       action('capacitacao', 'Capacitar gestores e lideranças', [task('publico', 'Definir o público e o conteúdo'), task('realizar', 'Realizar a capacitação')]),
       action('politica', 'Divulgar a política de gestão de riscos', [task('comunicacao', 'Preparar a comunicação para os setores')]),
@@ -46,8 +46,8 @@ const pdiItems = [
     title: 'Ampliar a participação em rankings universitários', owner: 'SEPLAN', partners: 'SPE',
     description: 'Aumentar a participação da UFCG em rankings universitários nacionais e internacionais.',
     source: 'PDI 2026–2030 · Eixo 8 · Iniciativa 8.1.9. Título abreviado na navegação.',
-    metric: { name: 'Rankings com participação da UFCG', unit: 'rankings', baseline: 2, reference: 'Linha de base do PDI', direction: 'up', targets: targets(4), formula: 'Número de rankings com participação no período' },
-    measurements: measurement(3), extras: {},
+    metric: { name: 'Entrega do plano de participação em rankings', type: 'qualitative', qualitativeMode: 'boolean', unit: 'Sim/Não', baseline: null, reference: 'Entrega do plano orientador de inscrições', direction: 'up', targets: targets('Sim'), formula: 'Entrega do produto orientador no período' },
+    measurements: measurement('Sim'), extras: {},
     actions: [action('mapear', 'Mapear rankings nacionais e internacionais', [task('lista', 'Consolidar a lista de rankings', true), task('criterios', 'Verificar os critérios de participação')]), action('inscrever', 'Realizar inscrições nos rankings selecionados', [task('dados', 'Reunir os dados institucionais'), task('envio', 'Enviar as inscrições')])],
     history: historical('Registrada medição ilustrativa de três rankings em 2026.'), risks: [risk('risk-rankings', 'inscrever', 'Enviar as inscrições', 'Dados institucionais incompletos para a inscrição', 3, 3, 'Mitigar', 'SEPLAN')],
   },
@@ -91,8 +91,18 @@ const plsItems = [
 ];
 
 export function initialState() {
-  return structuredClone({ version: 1, templates, plans: [
+  const state = structuredClone({ version: 1, templates, plans: [
     { id: 'pdi', type: 'PDI', shortName: 'PDI', name: 'Plano de Desenvolvimento Institucional', start: 2026, end: 2030, template: templates[0], items: pdiItems, created: false },
     { id: 'pls', type: 'PLS', shortName: 'PLS', name: 'Plano de Logística Sustentável', start: 2025, end: 2030, template: templates[1], items: plsItems, created: false },
   ] });
+  const axisColors = { '8 · Governança e Gestão Institucional': '#2f78a5', '1 · Consumo consciente de bens e serviços': '#4c8c68' };
+  state.plans.forEach((plan) => {
+    plan.axisColors = {};
+    plan.items.forEach((item) => {
+      item.axisColor = axisColors[item.axis] || '#2f78a5';
+      plan.axisColors[item.axis] = item.axisColor;
+      item.actions.forEach((currentAction, index) => { currentAction.code ||= `${item.code}.${index + 1}`; currentAction.tasks.forEach((currentTask) => { currentTask.deadline ||= currentAction.deadline; currentTask.justification ||= ''; }); });
+    });
+  });
+  return state;
 }
