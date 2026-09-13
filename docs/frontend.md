@@ -1,5 +1,7 @@
 # Frontend do SUMI
 
+O histórico consolidado de funcionalidades, correções e adequações está em [Registro de implementação do frontend](implementacao-frontend.md).
+
 ## Objetivo
 
 O frontend oferece uma interface única para planos institucionais com estruturas e formas de medição diferentes. O modelo atual contempla o PDI e o PLS sem fixar o produto a esses dois tipos.

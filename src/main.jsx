@@ -116,7 +116,7 @@ function Home({ data, session, can }) {
   const overdue = internalItems.reduce((total, { item }) => total + item.actions.flatMap((action) => action.tasks).filter((task) => taskOverdue(task)).length, 0);
   const awaiting = items.filter(({ plan, item }) => item.reviewStatus === 'submitted' && can(PERMISSIONS.REVIEW_ITEM, resourceFor(plan, item))).length;
   return <div className="page"><div className="page-heading"><div><p className="eyebrow">VISÃO GERAL</p><h1>{session.authenticated ? `Olá, ${session.user?.name?.split(' ')[0] || 'usuário'}` : 'Planejamento institucional'}</h1><p>{session.authenticated ? 'Acompanhe suas responsabilidades e os resultados dos planos institucionais.' : 'Consulte os planos e resultados publicados pela UFCG.'}</p></div></div>
-    <div className="overview-grid"><article><span>Planejamentos disponíveis</span><strong>{data.plans.length}</strong><a href="#/planejamentos">Consultar planos <Icon name="arrow" size={14} /></a></article><article><span>Itens acompanhados</span><strong>{items.length}</strong><small>Iniciativas e metas</small></article>{session.authenticated && internalItems.length > 0 ? <article><span>Etapas atrasadas</span><strong>{overdue}</strong><small>Nos seus escopos de acesso</small></article> : <article><span>Planos publicados</span><strong>{data.plans.filter((plan) => plan.status === 'published').length}</strong><small>Consulta disponível</small></article>}{can(PERMISSIONS.VIEW_REVIEW_QUEUE) && <article><span>Aguardando validação</span><strong>{awaiting}</strong><a href="#/validacoes">Abrir fila <Icon name="arrow" size={14} /></a></article>}</div>
+    <div className="overview-grid"><article><span>Planejamentos disponíveis</span><strong>{data.plans.length}</strong><a href="#/planejamentos">Consultar planos <Icon name="arrow" size={14} /></a></article><article><span>Itens acompanhados</span><strong>{items.length}</strong><small>Iniciativas e metas</small></article>{session.authenticated && internalItems.length > 0 ? <article className={overdue ? 'has-overdue' : undefined}><span>Etapas atrasadas</span><strong>{overdue}</strong><small>Nos seus escopos de acesso</small></article> : <article><span>Planos publicados</span><strong>{data.plans.filter((plan) => plan.status === 'published').length}</strong><small>Consulta disponível</small></article>}{can(PERMISSIONS.VIEW_REVIEW_QUEUE) && <article><span>Aguardando validação</span><strong>{awaiting}</strong><a href="#/validacoes">Abrir fila <Icon name="arrow" size={14} /></a></article>}</div>
     <section className="home-section"><div className="section-heading"><div><h2>Planejamentos em acompanhamento</h2><p className="hint">Visão consolidada dos ciclos institucionais.</p></div><a className="text-button" href="#/planejamentos">Ver todos</a></div><div className="compact-plan-list">{data.plans.map((plan) => <a key={plan.id} href={`#${planUrl(plan.id)}`}><span className={`plan-icon ${plan.type.toLowerCase()}`}><Icon name={plan.type === 'PDI' ? 'book' : 'leaf'} size={18} /></span><span><strong>{plan.shortName}</strong><small>{plan.name}</small></span><span>{executionProgress({ actions: plan.items.flatMap((item) => item.actions) }).percent}%</span><Icon name="chevron" size={14} /></a>)}</div></section>
   </div>;
 }
@@ -188,12 +188,12 @@ function ItemDetail({ plan, item, actor, can, tab, tabs, period, setPeriod, onMo
     selectTab(tabs[nextIndex][0]);
     requestAnimationFrame(() => document.querySelectorAll('.detail-tabs [role="tab"]')[nextIndex]?.focus());
   };
-  return <><div className="item-heading" style={{ '--axis-color': axis?.color || '#2f78a5' }}><div className="section-heading"><div className="flex items-center gap-3"><span className="item-code">{plan.template.labels.item.toUpperCase()} {item.code}</span><Badge tone={statusTone(executionStatus(item))}>{executionStatus(item)}</Badge></div>{can(PERMISSIONS.EDIT_ITEM, resource) && <Button icon="edit" variant="ghost" onClick={() => onModal({ type: 'item', item })}>Editar informações</Button>}</div><h2>{item.title}</h2><p>{item.description}</p><div className="item-meta"><span><Icon name="layers" size={15} /><strong>{objective?.code} · {objective?.title}</strong></span><span><Icon name="user" size={15} /><strong>{item.owner}</strong></span>{item.partners && <span>Parceiros: {item.partners}</span>}</div>{extraFields.length > 0 && <div className="extra-values">{extraFields.map((field) => <span key={field.id}><b>{field.label}:</b> {presentExtra(field, item.extras[field.id])}</span>)}</div>}</div>
+  return <><div className="item-heading" style={{ '--axis-color': axis?.color || '#2f78a5' }}><div className="section-heading"><div className="flex items-center gap-3"><span className="item-code">{plan.template.labels.item} {item.code}</span><Badge tone={statusTone(executionStatus(item))}>{executionStatus(item)}</Badge></div>{can(PERMISSIONS.EDIT_ITEM, resource) && <Button icon="edit" variant="ghost" onClick={() => onModal({ type: 'item', item })}>Editar informações</Button>}</div><h2>{item.title}</h2><p>{item.description}</p><div className="item-meta"><span><Icon name="layers" size={15} /><strong>{objective?.code} · {objective?.title}</strong></span><span><Icon name="user" size={15} /><strong>{item.owner}</strong></span>{item.partners && <span>Parceiros: {item.partners}</span>}</div>{extraFields.length > 0 && <div className="extra-values">{extraFields.map((field) => <span key={field.id}><b>{field.label}:</b> {presentExtra(field, item.extras[field.id])}</span>)}</div>}</div>
     {canSeeWorkflow && <div className={`workflow-banner ${item.reviewStatus}`}><div><span>Validação</span><strong>{reviewStatusLabel(item.reviewStatus)}</strong>{item.reviewNote && <p>{item.reviewNote}</p>}</div><div>{can(PERMISSIONS.SUBMIT_ITEM, resource) && ['draft', 'changes_requested'].includes(item.reviewStatus) && <Button variant="primary" onClick={submit}>Enviar para validação</Button>}{can(PERMISSIONS.REVIEW_ITEM, resource) && item.reviewStatus === 'submitted' && <><Button onClick={() => onModal({ type: 'review', item, decision: 'changes_requested' })}>Solicitar correção</Button><Button variant="primary" onClick={() => onModal({ type: 'review', item, decision: 'validated' })}>Validar</Button></>}</div></div>}
     {item.linkedPlan && <a className="linked-plan" href={`#${planUrl(item.linkedPlan)}`}><Icon name="link" size={16} /><span>Relacionado ao Plano Diretor de Logística Sustentável</span><Icon name="arrow" size={14} /></a>}
-    <div className="detail-tabs" role="tablist">{tabs.map(([value, icon, label], index) => <button key={value} className={tab === value ? 'active' : ''} role="tab" aria-selected={tab === value} tabIndex={tab === value ? 0 : -1} onClick={() => selectTab(value)} onKeyDown={(event) => moveTab(event, index)}><Icon name={icon} size={15} />{label}</button>)}</div><div className="tab-content" role="tabpanel">
+    <div className="detail-tabs" role="tablist">{tabs.map(([value, icon, label], index) => <button key={value} className={tab === value ? 'active' : ''} role="tab" aria-selected={tab === value} tabIndex={tab === value ? 0 : -1} onClick={() => selectTab(value)} onKeyDown={(event) => moveTab(event, index)}>{label}</button>)}</div><div className="tab-content" role="tabpanel">
       {tab === 'acoes' && <Actions item={item} actor={actor} can={can} plan={plan} onAdd={() => onModal({ type: 'action', item })} onAddRisk={(action) => onModal({ type: 'risk', item, action })} onChange={(change, message) => changeItem(plan.id, item.id, (current) => ({ ...change(current), reviewStatus: ['submitted', 'validated'].includes(current.reviewStatus) ? 'draft' : current.reviewStatus }), message)} />}
-      {tab === 'indicadores' && <Indicators item={item} can={can} plan={plan} period={period} setPeriod={setPeriod} onRecord={() => onModal({ type: 'measurement', item, period })} onTargets={() => onModal({ type: 'targets', item })} />}
+      {tab === 'indicadores' && <Indicators key={item.id} item={item} can={can} plan={plan} period={period} setPeriod={setPeriod} onRecord={() => onModal({ type: 'measurement', item, period })} onTargets={() => onModal({ type: 'targets', item })} />}
       {tab === 'riscos' && <Risks item={item} canEdit={can(PERMISSIONS.MANAGE_RISK, resource)} onEdit={(risk) => onModal({ type: 'risk', item, action: item.actions.find((action) => action.id === risk.actionId), risk })} />}
       {tab === 'historico' && <History item={item} canComment={can(PERMISSIONS.COMMENT_HISTORY, resource)} onComment={(text) => changeItem(plan.id, item.id, (current) => ({ ...current, history: [...current.history, historyEntry(text, actor)] }), 'Observação adicionada.')} />}
     </div><footer className="source-note"><Icon name="info" size={13} />{item.source}</footer></>;
@@ -206,7 +206,16 @@ function StageRow({ task, action, actor, canUpdate, onChange }) {
   const overdue = taskOverdue(task);
   const changeStatus = (status) => { onChange((current) => ({ ...current, actions: current.actions.map((candidate) => candidate.id === action.id ? { ...candidate, tasks: candidate.tasks.map((stage) => stage.id === task.id ? { ...stage, status } : stage) } : candidate), history: [...current.history, historyEntry(`Etapa “${task.title}” alterada para ${stageStatusLabel(status)}.`, actor)] }), 'Situação da etapa atualizada.'); if (status === 'cancelled' && !task.justification) setJustifying(true); };
   const saveJustification = (event) => { event.preventDefault(); if (!justification.trim()) return setError('Informe uma justificativa.'); onChange((current) => ({ ...current, actions: current.actions.map((candidate) => candidate.id === action.id ? { ...candidate, tasks: candidate.tasks.map((stage) => stage.id === task.id ? { ...stage, justification: justification.trim() } : stage) } : candidate), history: [...current.history, historyEntry(`Justificativa registrada para a etapa “${task.title}”.`, actor)] }), 'Justificativa salva.'); setJustifying(false); setError(''); };
-  return <div className={`task-row ${task.status === 'completed' ? 'done' : ''} ${!canUpdate ? 'read-only' : ''} ${overdue ? 'overdue' : ''}`}><span className="stage-status-marker" aria-hidden="true" /><span className="task-main"><span>{task.title}</span><small>Prazo: {formatDate(task.deadline)}{task.partners ? ` · Parceiros: ${task.partners}` : ''}</small></span>{canUpdate ? <select className="stage-status-select" aria-label={`Situação de ${task.title}`} value={task.status} onChange={(event) => changeStatus(event.target.value)}>{Object.entries(stageStatusLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select> : <Badge tone={task.status === 'completed' ? 'green' : overdue ? 'attention' : 'neutral'}>{overdue ? 'Atrasada' : stageStatusLabel(task.status)}</Badge>}{overdue && canUpdate && <Badge tone="attention">Atrasada</Badge>}{canUpdate && (overdue || task.status === 'cancelled' || task.justification) && <button type="button" className="justification-button" onClick={() => setJustifying((current) => !current)}>{task.justification ? 'Justificativa' : 'Justificar'}</button>}{justifying && canUpdate && <form className="justification-form" onSubmit={saveJustification}><label htmlFor={`justification-${task.id}`}>Justificativa da etapa</label><textarea id={`justification-${task.id}`} rows="2" maxLength={400} value={justification} onChange={(event) => setJustification(event.target.value)} placeholder="Informe a causa e, se possível, a nova previsão." />{error && <p role="alert" className="form-error">{error}</p>}<div><button type="submit" className="button primary">Salvar justificativa</button><button type="button" className="button" onClick={() => setJustifying(false)}>Cancelar</button></div></form>}{!justifying && task.justification && <p className="justification-text"><b>Justificativa:</b> {task.justification}</p>}</div>;
+  return <div className={`task-row ${task.status === 'completed' ? 'done' : ''} ${!canUpdate ? 'read-only' : ''} ${overdue ? 'overdue' : ''}`}>
+    <div className="task-main"><span>{task.title}</span>{task.partners && <small>Parceiros: {task.partners}</small>}</div>
+    <div className="task-deadline"><span className="mobile-field-label">Prazo</span><time dateTime={task.deadline}>{formatDate(task.deadline)}</time>{overdue && <span className="overdue-label">Atrasada</span>}</div>
+    <div className="stage-control">
+      {canUpdate ? <select className="stage-status-select" aria-label={`Situação de ${task.title}`} value={task.status} onChange={(event) => changeStatus(event.target.value)}>{Object.entries(stageStatusLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select> : <Badge tone={statusTone(stageStatusLabel(task.status))}>{stageStatusLabel(task.status)}</Badge>}
+      {canUpdate && (overdue || task.status === 'cancelled' || task.justification) && <button type="button" className="justification-button" aria-expanded={justifying} onClick={() => setJustifying((current) => !current)}>{task.justification ? 'Justificativa' : 'Justificar'}</button>}
+    </div>
+    {justifying && canUpdate && <form className="justification-form" onSubmit={saveJustification}><label htmlFor={`justification-${task.id}`}>Justificativa da etapa</label><textarea id={`justification-${task.id}`} rows="2" maxLength={400} value={justification} onChange={(event) => setJustification(event.target.value)} placeholder="Informe a causa e, se possível, a nova previsão." />{error && <p role="alert" className="form-error">{error}</p>}<div><button type="submit" className="button primary">Salvar justificativa</button><button type="button" className="button" onClick={() => setJustifying(false)}>Cancelar</button></div></form>}
+    {!justifying && task.justification && <p className="justification-text"><b>Justificativa:</b> {task.justification}</p>}
+  </div>;
 }
 
 function Actions({ item, actor, can, plan, onAdd, onAddRisk, onChange }) {
@@ -226,8 +235,10 @@ function Actions({ item, actor, can, plan, onAdd, onAddRisk, onChange }) {
   const cancelStage = () => { setAdding(null); setTaskName(''); setTaskDeadline(''); setTaskPartners(''); setError(''); };
   return <>
     <div className="execution-summary" style={{ '--axis-color': axisFor(plan, item)?.color || '#2f78a5' }}>
-      <div><span className="metric-label">EXECUÇÃO DAS ETAPAS</span><strong>{progress.total ? `${progress.percent}%` : '—'}</strong></div>
-      <div><Progress {...progress} /><small>Percentual calculado sobre todas as etapas ativas.</small></div>
+      <span>Execução das etapas</span>
+      <strong>{progress.total ? `${progress.percent}%` : '—'}</strong>
+      <span className="execution-count">{progress.done} de {progress.total} etapas ativas concluídas</span>
+      <div className="execution-bar" role="progressbar" aria-label="Execução das etapas" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress.percent} aria-valuetext={`${progress.done} de ${progress.total} etapas ativas concluídas`}><span style={{ width: `${progress.percent}%` }} /></div>
     </div>
     <div className="section-heading actions-heading">
       <h3>Ações estratégicas <span>{item.actions.length}</span></h3>
@@ -240,13 +251,12 @@ function Actions({ item, actor, can, plan, onAdd, onAddRisk, onChange }) {
         const closed = collapsed.includes(action.id);
         return <article className="action-card" key={action.id} style={{ '--axis-color': axisFor(plan, item)?.color || '#2f78a5' }}>
           <button className="action-heading" aria-expanded={!closed} onClick={() => toggleAction(action.id)}>
-            <span className="action-number">{action.code}</span>
-            <span className="action-name">{action.title}<small>{action.owner} <span>·</span> Prazo: {formatDate(action.deadline)}</small></span>
-            <span className="task-count">{state.percent}%</span>
+            <span className="action-name"><span className="action-number">{action.code}</span><span className="action-title">{action.title}</span><small>{action.owner} <span>·</span> Prazo: {formatDate(action.deadline)}</small></span>
+            <span className="task-count"><span>{state.done} de {state.total} {state.total === 1 ? 'etapa concluída' : 'etapas concluídas'}</span><strong>{state.percent}%</strong></span>
             <Icon name="chevron" size={14} className={!closed ? 'rotated' : ''} />
           </button>
           {!closed && <div className="action-body">
-            <div className="action-progress"><Progress {...state} compact /></div>
+            {action.tasks.length > 0 && <div className="stage-columns" aria-hidden="true"><span>Etapa</span><span>Prazo</span><span>Situação</span></div>}
             {action.tasks.map((task) => <StageRow key={task.id} task={task} action={action} actor={actor} canUpdate={canUpdateStage} onChange={onChange} />)}
             {!action.tasks.length && <p className="hint px-5 pt-3">Esta ação ainda não possui etapas.</p>}
             {adding === action.id ? <form className="inline-task-form" onSubmit={(event) => submitTask(event, action.id)}>
@@ -268,80 +278,68 @@ function Actions({ item, actor, can, plan, onAdd, onAddRisk, onChange }) {
 }
 
 function Indicators({ item, can, plan, period, setPeriod, onRecord, onTargets }) {
+  const [view, setView] = useState('table');
   const result = metricResult(item, period);
   const target = item.metric.targets[period];
   const status = metricStatus(item, period);
+  const achievement = metricAchievement(item, period);
   const resource = resourceFor(plan, item);
   const canRecord = item.metric.measurementMode !== 'stages' && can(PERMISSIONS.RECORD_RESULT, resource);
-  const modeLabels = { manual: 'Valor informado', delivery: 'Entrega acompanhada', stages: 'Calculado pelas etapas' };
-  const description = item.metric.measurementMode === 'stages' ? 'O resultado é calculado automaticamente pela conclusão das etapas.' : item.metric.measurementMode === 'delivery' ? 'A entrega é acompanhada por sua situação e evidências.' : `${item.metric.direction === 'down' ? 'Quanto menor, melhor' : 'Quanto maior, melhor'} · ${item.metric.periodicity === 'annual' ? 'Consolidado anual' : 'Resultado do ciclo'}`;
-  const resultBadge = item.metric.valueType === 'status' || metricAchievement(item, period) == null ? status : `${metricAchievement(item, period)}% · ${status}`;
-  return <><div className="section-heading indicator-heading"><div><div className="indicator-title-line"><h3>{item.metric.name}</h3><span className="metric-type-chip quantitative">{modeLabels[item.metric.measurementMode]}</span></div><p>{description}</p></div><Field label={item.metric.periodicity === 'final' ? 'Período' : 'Ano de referência'} className="year-field"><select value={period} onChange={(event) => setPeriod(Number(event.target.value))}>{periods(plan, item).map((value) => <option key={value} value={value}>{periodLabel(plan, item, value)}</option>)}</select></Field></div><IndicatorDashboard item={item} plan={plan} period={period} setPeriod={setPeriod} result={result} target={target} status={status} /><div className="indicator-values"><div><span>Linha de base</span><strong>{formatMetricValue(item, item.metric.baseline)} <small>{item.metric.unit}</small></strong><p>{item.metric.reference}</p></div><div><span>Meta</span><strong>{target == null ? '—' : `${item.metric.direction === 'down' ? '≤ ' : ''}${formatMetricValue(item, target)}`} <small>{target == null ? '' : item.metric.unit}</small></strong><p>{periodLabel(plan, item, period)}</p></div><div className="current-result"><span>{item.metric.measurementMode === 'stages' ? 'Execução das etapas' : 'Resultado registrado'}</span><strong>{formatMetricValue(item, result)} <small>{result == null ? '' : item.metric.unit}</small></strong><Badge tone={metricTone(item, period)}>{resultBadge}</Badge></div></div><div className="formula"><Icon name="info" size={16} /><span>{item.metric.formula}</span></div><div className="section-heading annual-heading"><h3>{item.metric.periodicity === 'final' ? 'Meta e resultado do ciclo' : 'Metas e resultados por ano'}</h3>{can(PERMISSIONS.EDIT_TARGET, resource) && <Button icon="edit" variant="ghost" onClick={onTargets}>Editar metas</Button>}</div><div className="table-scroll"><table className="annual-table"><thead><tr><th>Período</th><th>Meta</th><th>Resultado</th><th>Situação</th></tr></thead><tbody>{periods(plan, item).map((value) => { const achievement = metricAchievement(item, value); const label = item.metric.valueType === 'status' || achievement == null ? metricStatus(item, value) : `${achievement}% · ${metricStatus(item, value)}`; return <tr key={value} className={period === value ? 'current-year' : ''}><th scope="row">{periodLabel(plan, item, value)}</th><td>{formatMetricValue(item, item.metric.targets[value])}</td><td>{formatMetricValue(item, metricResult(item, value))}</td><td><Badge tone={metricTone(item, value)}>{label}</Badge></td></tr>; })}</tbody></table></div><div className="record-footer"><p>{latestMeasurement(item, period) ? `Último registro: ${formatDate(latestMeasurement(item, period).at)}` : item.metric.measurementMode === 'stages' ? 'Resultado atualizado automaticamente pelas etapas.' : 'Nenhum resultado registrado para o período.'}</p>{canRecord && <Button variant="primary" icon="plus" onClick={onRecord}>Registrar resultado</Button>}</div><div className="measurements"><h3>Registros do período</h3>{item.measurements.filter((entry) => Number(entry.year) === Number(period)).length ? [...item.measurements].reverse().filter((entry) => Number(entry.year) === Number(period)).map((entry) => <article className="measurement" key={entry.id}><div><strong>{formatMetricValue(item, entry.value)} {item.metric.unit}</strong><time>{formatDate(entry.at)}</time></div><p>{entry.note}</p>{entry.evidence && <a href={entry.evidence} target="_blank" rel="noreferrer">Abrir evidência <Icon name="arrow" size={13} /></a>}</article>) : <p className="hint">Nenhum registro manual para este período.</p>}</div></>;
+  const descriptive = item.metric.valueType === 'status';
+  const list = periods(plan, item);
+  const hasEvolution = list.length > 1 && !descriptive;
+  const measurements = [...item.measurements].reverse().filter((entry) => Number(entry.year) === Number(period));
+  const description = item.metric.measurementMode === 'stages' ? 'Calculado automaticamente pela conclusão das etapas ativas.' : item.metric.measurementMode === 'delivery' ? 'Entrega acompanhada por situação e evidências.' : `Valor informado · ${item.metric.direction === 'down' ? 'Quanto menor, melhor' : 'Quanto maior, melhor'} · ${item.metric.periodicity === 'annual' ? 'Consolidado anual' : 'Resultado do ciclo'}`;
+  const metricValue = (value) => `${formatMetricValue(item, value)}${value == null || value === '' || !item.metric.unit ? '' : ` ${item.metric.unit}`}`;
+  const targetValue = (value) => `${value != null && value !== '' && item.metric.direction === 'down' ? '≤ ' : ''}${metricValue(value)}`;
+  return <section className="indicator" aria-label="Indicador e metas" style={{ '--axis-color': axisFor(plan, item)?.color || '#2f78a5' }}>
+    <div className="section-heading indicator-heading">
+      <div><h3>{item.metric.name}</h3><p>{description}</p></div>
+      <Field label={item.metric.periodicity === 'final' ? 'Período' : 'Ano de referência'} className="year-field"><select value={period} onChange={(event) => setPeriod(Number(event.target.value))}>{list.map((value) => <option key={value} value={value}>{periodLabel(plan, item, value)}</option>)}</select></Field>
+    </div>
+    <div className={`indicator-summary ${status === 'Meta atingida' ? 'green' : status === 'Meta não atingida' ? 'critical' : status === 'Em acompanhamento' ? 'blue' : 'neutral'} ${descriptive ? 'descriptive' : ''}`}>
+      <div className="current-result"><span>Resultado</span><strong>{metricValue(result)}</strong><Badge tone={metricTone(item, period)}>{status}</Badge></div>
+      <div><span>Meta</span><strong>{targetValue(target)}</strong></div>
+      {!descriptive && <div><span>Atingimento</span><strong>{achievement == null ? '—' : `${achievement}%`}</strong></div>}
+    </div>
+    <div className="indicator-reference"><p><b>Linha de base:</b> {metricValue(item.metric.baseline)}{item.metric.reference && <span> · {item.metric.reference}</span>}</p><p className="formula"><b>{descriptive ? 'Critério:' : 'Cálculo:'}</b> {item.metric.formula}</p></div>
+    <div className="section-heading annual-heading">
+      <h3>{item.metric.periodicity === 'final' ? 'Meta e resultado do ciclo' : 'Metas e resultados por ano'}</h3>
+      <div className="annual-tools">
+        {hasEvolution && <div className="view-switch" role="group" aria-label="Visualização dos resultados"><button type="button" aria-pressed={view === 'table'} onClick={() => setView('table')}>Tabela</button><button type="button" aria-pressed={view === 'evolution'} onClick={() => setView('evolution')}>Evolução</button></div>}
+        {can(PERMISSIONS.EDIT_TARGET, resource) && <Button variant="ghost" onClick={onTargets}>Editar metas</Button>}
+      </div>
+    </div>
+    {view === 'table' || !hasEvolution ? <div className="table-scroll"><table className={`annual-table ${descriptive ? 'descriptive' : ''}`}>
+      <thead><tr><th scope="col">Período</th><th scope="col">Meta{item.metric.unit && ` (${item.metric.unit})`}</th><th scope="col">Resultado{item.metric.unit && ` (${item.metric.unit})`}</th>{!descriptive && <th scope="col">Atingimento</th>}<th scope="col">Situação</th></tr></thead>
+      <tbody>{list.map((value) => {
+        const annualAchievement = metricAchievement(item, value);
+        return <tr key={value} className={period === value ? 'current-year' : ''}>
+          <th scope="row"><button type="button" className="period-button" aria-label={`Selecionar ${periodLabel(plan, item, value)}`} aria-pressed={period === value} onClick={() => setPeriod(value)}>{periodLabel(plan, item, value)}</button></th>
+          <td>{item.metric.targets[value] != null && item.metric.targets[value] !== '' && item.metric.direction === 'down' ? '≤ ' : ''}{formatMetricValue(item, item.metric.targets[value])}</td>
+          <td>{formatMetricValue(item, metricResult(item, value))}</td>
+          {!descriptive && <td>{annualAchievement == null ? '—' : `${annualAchievement}%`}</td>}
+          <td><Badge tone={metricTone(item, value)}>{metricStatus(item, value)}</Badge></td>
+        </tr>;
+      })}</tbody>
+    </table></div> : <IndicatorEvolution item={item} plan={plan} period={period} setPeriod={setPeriod} />}
+    <div className="record-footer"><p>{latestMeasurement(item, period) ? `Último registro: ${formatDate(latestMeasurement(item, period).at)}` : item.metric.measurementMode === 'stages' ? 'Resultado atualizado automaticamente pelas etapas.' : 'Nenhum resultado registrado para o período.'}</p>{canRecord && <Button variant="primary" icon="plus" onClick={onRecord}>Registrar resultado</Button>}</div>
+    <div className="measurements"><h3>Registros do período</h3>{measurements.length ? measurements.map((entry) => <article className="measurement" key={entry.id}><div><strong>{metricValue(entry.value)}</strong><time>{formatDate(entry.at)}</time></div><p>{entry.note}</p>{entry.evidence && <a href={entry.evidence} target="_blank" rel="noreferrer">Abrir evidência <Icon name="arrow" size={13} /></a>}</article>) : <p className="hint">Nenhum registro manual para este período.</p>}</div>
+  </section>;
 }
 
-function IndicatorDashboard({ item, plan, period, setPeriod, result, target, status }) {
-  const achievement = metricAchievement(item, period);
-  const list = periods(plan, item);
-  return (
-    <section
-      className="indicator-dashboard"
-      style={{ '--axis-color': axisFor(plan, item)?.color || '#2f78a5' }}
-      aria-label="Painel do indicador"
-    >
-      <div className="dashboard-heading">
-        <div>
-          <span className="metric-label">PAINEL DE ACOMPANHAMENTO</span>
-          <h4>Visão da meta</h4>
-        </div>
-        <Badge tone={metricTone(item, period)}>{status}</Badge>
-      </div>
-      <div className="dashboard-cards">
-        <div className="dashboard-card dashboard-current">
-          <span>Resultado atual</span>
-          <strong>{formatMetricValue(item, result)}<small>{result == null ? '' : item.metric.unit}</small></strong>
-          <p>{periodLabel(plan, item, period)}</p>
-        </div>
-        <div className="dashboard-card">
-          <span>Meta</span>
-          <strong>{formatMetricValue(item, target)}<small>{target == null ? '' : item.metric.unit}</small></strong>
-          <p>Resultado esperado</p>
-        </div>
-        {item.metric.valueType === 'status' ? <div className="dashboard-card"><span>Situação da meta</span><strong className="dashboard-status-value">{status}</strong><p>Acompanhamento descritivo</p></div> : <div className="dashboard-card">
-          <span>Atingimento</span>
-          <strong>{achievement == null ? '—' : `${achievement}%`}</strong>
-          <div className="dashboard-bar"><span style={{ width: `${achievement == null ? 0 : achievement}%` }} /></div>
-          <p>{achievement == null ? 'Aguardando resultado' : achievement >= 100 ? 'Meta alcançada' : 'Em acompanhamento'}</p>
-        </div>}
-      </div>
-      {list.length > 1 && item.metric.valueType !== 'status' && (
-        <div className="annual-dashboard">
-          <div className="dashboard-heading"><h4>Evolução anual</h4></div>
-          <div className="annual-bars">
-            {list.map((value) => {
-              const annualAchievement = metricAchievement(item, value);
-              return (
-                <button
-                  type="button"
-                  className={`annual-bar ${value === period ? 'selected' : ''}`}
-                  key={value}
-                  onClick={() => setPeriod(value)}
-                  title={`${value}: ${metricStatus(item, value)}`}
-                >
-                  <span className="annual-bar-value">{annualAchievement == null ? '—' : `${annualAchievement}%`}</span>
-                  <span className="annual-bar-track">
-                    <i className="annual-bar-target" style={{ height: item.metric.targets[value] == null ? '0%' : '100%' }} />
-                    <i className="annual-bar-result" style={{ height: `${annualAchievement == null ? 0 : annualAchievement}%` }} />
-                  </span>
-                  <b>{value}</b>
-                  <small>{formatMetricValue(item, metricResult(item, value))}</small>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
-    </section>
-  );
+function IndicatorEvolution({ item, plan, period, setPeriod }) {
+  return <div className="indicator-evolution" role="region" aria-label="Evolução anual do atingimento">
+    <p className="hint">Atingimento da meta por ano. 100% corresponde à meta atingida.</p>
+    <div className="evolution-scale" aria-hidden="true"><span>0%</span><span>50%</span><span>100%</span></div>
+    {periods(plan, item).map((value) => {
+      const achievement = metricAchievement(item, value);
+      return <button type="button" key={value} className="evolution-row" aria-pressed={period === value} aria-label={`Selecionar ${value}: ${achievement == null ? metricStatus(item, value) : `${achievement}% de atingimento`}`} onClick={() => setPeriod(value)}>
+        <span className="evolution-year">{value}</span>
+        {achievement == null ? <span className="evolution-empty">{metricStatus(item, value)}</span> : <><span className="evolution-track" aria-hidden="true"><span style={{ width: `${achievement}%` }} /></span><strong>{achievement}%</strong></>}
+      </button>;
+    })}
+  </div>;
 }
 
 function Risks({ item, canEdit, onEdit }) {

@@ -33,7 +33,7 @@ test('administrador cria plano vazio, estrutura e primeiro item', async ({ page 
   await item.getByLabel('Linha de base').fill('0');
   await item.getByLabel('Valor esperado').fill('4');
   await item.getByRole('button', { name: 'Adicionar ao plano' }).click();
-  await expect(page.locator('.item-code')).toContainText('INICIATIVA 1.1.1');
+  await expect(page.locator('.item-code')).toContainText('Iniciativa 1.1.1');
   await expect(page.getByRole('heading', { name: 'Consolidar relatórios institucionais' })).toBeVisible();
 });
 
@@ -51,7 +51,7 @@ test('modelos permitem terminologia e campos adicionais sem alterar planos exist
   await expect(pdiCard).toContainText('Versão 3');
   await expect(pdiCard).toContainText('Entrega');
   await page.goto('/#/plano/pdi');
-  await expect(page.locator('.item-code').first()).toContainText('INICIATIVA');
+  await expect(page.locator('.item-code').first()).toContainText('Iniciativa');
 });
 
 test('criação oferece acompanhamento numérico, entrega e cálculo pelas etapas', async ({ page }) => {

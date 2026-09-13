@@ -109,3 +109,37 @@ test('matriz de riscos filtra e detalha os registros', async ({ page }) => {
   await expect(page.locator('.risk-card')).toContainText('Dependência de informações');
   await expect(page.locator('.risk-card')).toContainText('Responsável:');
 });
+
+test('tabela e evolução mantêm o período selecionado e distinguem ausência de resultado', async ({ page }) => {
+  await openPdi(page);
+  await page.getByRole('tab', { name: 'Indicador e metas' }).click();
+  await expect(page.getByRole('table')).toBeVisible();
+  await page.getByRole('button', { name: 'Selecionar 2027', exact: true }).click();
+  await expect(page.getByLabel('Ano de referência', { exact: true })).toHaveValue('2027');
+  await expect(page.locator('.current-result')).toContainText('Sem resultado');
+  await page.getByRole('button', { name: 'Evolução', exact: true }).click();
+  const evolution = page.getByRole('region', { name: 'Evolução anual do atingimento' });
+  await expect(evolution).toBeVisible();
+  await expect(evolution.getByRole('button', { name: 'Selecionar 2027: Sem resultado', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(evolution.getByRole('button', { name: 'Selecionar 2028: Sem meta definida', exact: true })).toBeVisible();
+  await evolution.getByRole('button', { name: 'Selecionar 2026: 25% de atingimento', exact: true }).click();
+  await expect(page.locator('.current-result strong')).toHaveText('20 %');
+  await page.getByRole('button', { name: 'Tabela', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Selecionar 2026', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await page.reload();
+  await expect(page.getByLabel('Ano de referência', { exact: true })).toHaveValue('2026');
+});
+
+test('novo resumo mantém o sentido de redução e a unidade das metas do PLS', async ({ page }) => {
+  await openPls(page);
+  await page.getByRole('tab', { name: 'Indicador e metas' }).click();
+  await expect(page.getByRole('region', { name: 'Indicador e metas', exact: true })).toContainText('Quanto menor, melhor');
+  await expect(page.locator('.indicator-summary')).toContainText('≤ 900 resmas');
+  await expect(page.getByRole('columnheader', { name: 'Meta (resmas)', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Evolução', exact: true }).click();
+  await selectItem(page, '11.1');
+  await page.getByRole('tab', { name: 'Indicador e metas' }).click();
+  await expect(page.locator('.current-result')).toContainText('Em elaboração');
+  await expect(page.getByRole('button', { name: 'Evolução', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('columnheader', { name: 'Atingimento', exact: true })).toHaveCount(0);
+});
